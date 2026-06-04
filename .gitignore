@@ -1,0 +1,5 @@
+node_modules/
+data/bot-db.json
+test/*.json
+.env
+.DS_Store

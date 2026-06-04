@@ -1,0 +1,18 @@
+{
+  "name": "openwa-bulk-bot",
+  "version": "1.0.0",
+  "description": "WhatsApp Bulk Messaging Bot MVP using OpenWA Gateway",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js",
+    "test": "node --test test/**/*.test.js"
+  },
+  "dependencies": {
+    "axios": "^1.7.2",
+    "cors": "^2.8.5",
+    "express": "^4.19.2",
+    "multer": "^1.4.5-lts.1",
+    "xlsx": "^0.18.5"
+  }
+}

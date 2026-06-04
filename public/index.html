@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WhatsApp Bulk Sender - Property Rentals</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+  <div class="app-container">
+    <!-- Header -->
+    <header class="header">
+      <div class="logo-area">
+        <span class="icon">⚡</span>
+        <h1>WA Bulk Messaging Bot</h1>
+      </div>
+      <div class="status-badge-container">
+        <span class="status-label">WhatsApp Status:</span>
+        <span id="wa-status-badge" class="badge badge-disconnected">Checking...</span>
+        <button id="btn-toggle-connection" class="btn btn-sm btn-primary">Connect</button>
+      </div>
+    </header>
+
+    <div class="dashboard-grid">
+      <!-- Left Column: Settings and Connection -->
+      <div class="column-left">
+        <!-- Section: WA QR / Status -->
+        <div class="card card-connection">
+          <h2>WhatsApp Connection</h2>
+          <p class="card-desc">Scan the QR code below using your WhatsApp app (Settings > Linked Devices) to connect.</p>
+          <div class="qr-container">
+            <div id="qr-placeholder" class="qr-placeholder">
+              <span class="qr-placeholder-text">Click "Connect" to load QR code.</span>
+            </div>
+            <img id="qr-image" src="" alt="WhatsApp QR Code" class="hidden">
+          </div>
+          <div id="connection-info" class="connection-info hidden">
+            <p><strong>Phone:</strong> <span id="wa-phone">-</span></p>
+            <p><strong>Name:</strong> <span id="wa-name">-</span></p>
+          </div>
+          <div class="connection-actions" style="margin-top: 12px;">
+            <button id="btn-force-reset" class="btn btn-sm btn-danger w-100 hidden">⚠️ Force Reset Connection</button>
+          </div>
+        </div>
+
+        <!-- Section: Templates -->
+        <div class="card card-templates">
+          <div class="card-header-actions">
+            <h2>Message Templates</h2>
+            <button id="btn-new-template" class="btn btn-sm btn-secondary">+ New</button>
+          </div>
+          <div class="template-selector-wrapper">
+            <label for="template-select">Select Template:</label>
+            <select id="template-select" class="form-control"></select>
+          </div>
+          <div id="template-editor" class="template-editor">
+            <div class="form-group">
+              <label for="template-name">Template Name</label>
+              <input type="text" id="template-name" class="form-control" placeholder="e.g., Lead Followup">
+            </div>
+            <div class="form-group">
+              <label for="template-content">Message Content</label>
+              <textarea id="template-content" class="form-control" rows="6" placeholder="Hello {{name}}, thank you for contacting us..."></textarea>
+              <span class="variable-tip">Tip: Use <code>{{name}}</code> to personalize message.</span>
+            </div>
+            <div class="editor-actions">
+              <button id="btn-save-template" class="btn btn-primary">Save Template</button>
+              <button id="btn-delete-template" class="btn btn-danger">Delete</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right Column: Excel Import & Bulk Sender -->
+      <div class="column-right">
+        <!-- Section: File Upload -->
+        <div class="card card-upload">
+          <h2>Leads Import</h2>
+          <p class="card-desc">Upload an Excel (.xlsx) or CSV (.csv) file. The file must contain columns named <strong>Name</strong> and <strong>Phone Number</strong> (or <strong>Phone</strong>).</p>
+          <div class="upload-zone" id="upload-zone">
+            <input type="file" id="file-input" accept=".xlsx,.csv" class="hidden">
+            <div class="upload-zone-content" id="upload-zone-content">
+              <span class="upload-icon">📁</span>
+              <p>Drag and drop your file here, or <span class="highlight">browse</span></p>
+              <span class="file-info" id="file-info-text">No file selected</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Section: Sender Console -->
+        <div class="card card-sender" id="sender-card">
+          <div class="card-header-actions">
+            <h2>Campaign Console</h2>
+            <div class="delay-wrapper">
+              <label for="delay-input">Delay (sec):</label>
+              <input type="number" id="delay-input" class="form-control delay-control" min="1" max="60" value="5">
+            </div>
+          </div>
+          
+          <div id="campaign-ready" class="campaign-ready hidden">
+            <div class="summary-stats">
+              <div class="stat-box">
+                <span class="stat-num" id="ready-total-count">0</span>
+                <span class="stat-label">Leads Loaded</span>
+              </div>
+              <div class="stat-box">
+                <span class="stat-num" id="preview-sample-name">-</span>
+                <span class="stat-label">Example Name</span>
+              </div>
+            </div>
+
+            <!-- Preview Card -->
+            <div class="preview-card">
+              <span class="preview-badge">Message Preview</span>
+              <p id="preview-text" class="preview-text">Select a template to see a personalized preview here.</p>
+            </div>
+
+            <div class="camp-actions">
+              <button id="btn-start-campaign" class="btn btn-lg btn-success w-100">🚀 Start Campaign</button>
+            </div>
+          </div>
+
+          <div id="campaign-progress" class="campaign-progress hidden">
+            <div class="progress-bar-container">
+              <div class="progress-bar-fill" id="progress-bar-fill" style="width: 0%"></div>
+            </div>
+            <div class="progress-stats">
+              <div class="stat-box">
+                <span class="stat-num text-primary" id="progress-total">0</span>
+                <span class="stat-label">Total</span>
+              </div>
+              <div class="stat-box">
+                <span class="stat-num text-success" id="progress-sent">0</span>
+                <span class="stat-label">Sent</span>
+              </div>
+              <div class="stat-box">
+                <span class="stat-num text-danger" id="progress-failed">0</span>
+                <span class="stat-label">Failed</span>
+              </div>
+              <div class="stat-box">
+                <span class="stat-num text-muted" id="progress-pending">0</span>
+                <span class="stat-label">Pending</span>
+              </div>
+            </div>
+
+            <div class="camp-status-message">
+              <span>Status: <strong id="progress-status-text">SENDING</strong></span>
+              <button id="btn-cancel-campaign" class="btn btn-sm btn-danger">Cancel campaign</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Section: Live Log History -->
+        <div class="card card-logs">
+          <h2>Live Transmission Logs</h2>
+          <div class="table-container">
+            <table class="logs-table">
+              <thead>
+                <tr>
+                  <th>Recipient Name</th>
+                  <th>Phone Number</th>
+                  <th>Status</th>
+                  <th>Time</th>
+                  <th>Details</th>
+                </tr>
+              </thead>
+              <tbody id="logs-tbody">
+                <tr>
+                  <td colspan="5" class="no-logs">No campaign running. Ready to upload and send.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <script src="app.js"></script>
+</body>
+</html>
