@@ -17,8 +17,11 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, '..', 'public')));
 
-// Setup Multer for memory upload
-const upload = multer({ storage: multer.memoryStorage() });
+// Setup Multer for memory upload with a strict 5MB limit
+const upload = multer({ 
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024 } // 5MB limit
+});
 
 // ==========================================
 // WHATSAPP GATEWAY SESSION ENDPOINTS
@@ -70,28 +73,71 @@ app.post('/api/session/reset', async (req, res) => {
 });
 
 // ==========================================
+// GATEWAY SETTINGS ENDPOINTS
+// ==========================================
+
+app.get('/api/settings', async (req, res) => {
+  try {
+    const settings = await db.getSettings();
+    res.json({
+      openwa_url: settings.openwa_url || process.env.OPENWA_URL || 'http://localhost:2785/api',
+      api_key: settings.api_key || process.env.API_KEY || 'dev-admin-key'
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/settings', async (req, res) => {
+  try {
+    const { openwa_url, api_key } = req.body;
+    if (openwa_url !== undefined) {
+      await db.saveSetting('openwa_url', openwa_url.trim());
+    }
+    if (api_key !== undefined) {
+      await db.saveSetting('api_key', api_key.trim());
+    }
+    res.json({ success: true, message: 'Settings saved successfully.' });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ==========================================
 // TEMPLATE CRUD ENDPOINTS
 // ==========================================
 
-app.get('/api/templates', (req, res) => {
-  res.json(db.getTemplates());
-});
-
-app.post('/api/templates', (req, res) => {
-  const { id, name, content } = req.body;
-  if (!name || !content) {
-    return res.status(400).json({ error: 'Name and Content are required.' });
+app.get('/api/templates', async (req, res) => {
+  try {
+    res.json(await db.getTemplates());
+  } catch (error) {
+    res.status(500).json({ error: error.message });
   }
-
-  const templateId = id || `tpl_${crypto.randomUUID()}`;
-  const template = { id: templateId, name, content };
-  db.saveTemplate(template);
-  res.json(template);
 });
 
-app.delete('/api/templates/:id', (req, res) => {
-  db.deleteTemplate(req.params.id);
-  res.json({ success: true });
+app.post('/api/templates', async (req, res) => {
+  try {
+    const { id, name, content } = req.body;
+    if (!name || !content) {
+      return res.status(400).json({ error: 'Name and Content are required.' });
+    }
+
+    const templateId = id || `tpl_${crypto.randomUUID()}`;
+    const template = { id: templateId, name, content };
+    await db.saveTemplate(template);
+    res.json(template);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.delete('/api/templates/:id', async (req, res) => {
+  try {
+    await db.deleteTemplate(req.params.id);
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
 });
 
 // ==========================================
@@ -130,71 +176,82 @@ app.post('/api/bulk/send', async (req, res) => {
 
   const delay = parseInt(delaySeconds, 10) || 5;
 
-  // Retrieve template content
-  const templates = db.getTemplates();
-  const template = templates.find(t => t.id === templateId);
-  if (!template) {
-    return res.status(404).json({ error: 'Template not found.' });
-  }
-
-  // Create new sending batch
-  const batchId = `batch_${Date.now()}`;
-  const batch = {
-    id: batchId,
-    templateId,
-    status: 'SENDING',
-    totalLeads: leads.length,
-    sentCount: 0,
-    failedCount: 0,
-    delaySeconds: delay,
-    createdAt: new Date().toISOString(),
-    leads: leads.map(l => ({
-      name: l.name,
-      phone: l.phone,
-      status: 'PENDING',
-      error: null,
-      timestamp: null
-    }))
-  };
-
-  db.saveBatch(batch);
-
-  // Trigger bulk sending in background
   try {
-    await sender.startBulkSend(batchId, template.content, delay);
+    // Retrieve template content
+    const templates = await db.getTemplates();
+    const template = templates.find(t => t.id === templateId);
+    if (!template) {
+      return res.status(404).json({ error: 'Template not found.' });
+    }
+
+    // Create new sending batch
+    const batchId = `batch_${Date.now()}`;
+    const batch = {
+      id: batchId,
+      templateId,
+      status: 'SENDING',
+      totalLeads: leads.length,
+      sentCount: 0,
+      failedCount: 0,
+      delaySeconds: delay,
+      createdAt: new Date().toISOString(),
+      leads: leads.map(l => ({
+        name: l.name,
+        phone: l.phone,
+        status: 'PENDING',
+        error: null,
+        timestamp: null
+      }))
+    };
+
+    await db.saveBatch(batch);
+
+    // Trigger bulk sending in background (don't await it here, starts immediately)
+    sender.startBulkSend(batchId, template.content, delay).catch(err => {
+      console.error('Background batch sending error:', err);
+    });
+
     res.json({ success: true, batchId });
   } catch (error) {
-    res.status(400).json({ error: error.message });
+    res.status(500).json({ error: error.message });
   }
 });
 
-app.get('/api/bulk/status', (req, res) => {
-  const status = sender.getActiveStatus();
-  if (status.isSending) {
-    return res.json(status);
-  }
+app.get('/api/bulk/status', async (req, res) => {
+  try {
+    const status = await sender.getActiveStatus();
+    if (status.isSending) {
+      return res.json(status);
+    }
 
-  // If no sending is active, return the latest batch details if any
-  const batches = db.getBatches();
-  if (batches.length > 0) {
-    const latest = batches[batches.length - 1];
-    return res.json({
-      isSending: false,
-      batchId: latest.id,
-      status: latest.status,
-      totalLeads: latest.totalLeads,
-      sentCount: latest.sentCount,
-      failedCount: latest.failedCount,
-      pendingCount: latest.leads.filter(l => l.status === 'PENDING').length,
-      leads: latest.leads
-    });
-  }
+    // If no sending is active, return the latest batch details if any
+    const batches = await db.getBatches();
+    if (batches.length > 0) {
+      const latest = batches[0]; // SQLite returns ordered by createdAt DESC
+      return res.json({
+        isSending: false,
+        batchId: latest.id,
+        status: latest.status,
+        totalLeads: latest.totalLeads,
+        sentCount: latest.sentCount,
+        failedCount: latest.failedCount,
+        pendingCount: latest.leads.filter(l => l.status === 'PENDING').length,
+        leads: latest.leads
+      });
+    }
 
-  res.json({ isSending: false, batchId: null });
+    res.json({ isSending: false, batchId: null });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
 });
 
-app.get('/api/bulk/batches', (req, res) => {
-  res.json(db.getBatches());
+app.get('/api/bulk/batches', async (req, res) => {
+  try {
+    res.json(await db.getBatches());
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
 });
 
 app.post('/api/bulk/cancel', (req, res) => {
@@ -202,9 +259,48 @@ app.post('/api/bulk/cancel', (req, res) => {
   res.json({ success: cancelled });
 });
 
+// CSV Export Endpoint
+app.get('/api/bulk/batches/:id/export', async (req, res) => {
+  try {
+    const batch = await db.getBatch(req.params.id);
+    if (!batch) {
+      return res.status(404).json({ error: 'Campaign batch not found.' });
+    }
+
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename=campaign-report-${batch.id}.csv`);
+
+    res.write('Name,Phone,Status,Message Sent,Timestamp,Error\n');
+
+    for (const lead of batch.leads) {
+      const name = (lead.name || '').replace(/"/g, '""');
+      const phone = lead.phone || '';
+      const status = lead.status || '';
+      const message = (lead.sentMessage || '').replace(/"/g, '""').replace(/\n/g, ' ');
+      const timestamp = lead.timestamp || '';
+      const error = (lead.error || '').replace(/"/g, '""');
+
+      res.write(`"${name}","${phone}","${status}","${message}","${timestamp}","${error}"\n`);
+    }
+
+    res.end();
+  } catch (error) {
+    console.error('Error exporting CSV:', error);
+    res.status(500).json({ error: 'Failed to generate report.' });
+  }
+});
+
 // Fallback to index.html for UI SPA routes
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, '..', 'public', 'index.html'));
+});
+
+// Error handling for Multer payload limit
+app.use((err, req, res, next) => {
+  if (err instanceof multer.MulterError && err.code === 'LIMIT_FILE_SIZE') {
+    return res.status(413).json({ error: 'File size too large. Maximum upload limit is 5MB.' });
+  }
+  next(err);
 });
 
 // Start Server

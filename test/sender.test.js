@@ -3,7 +3,7 @@ const assert = require('node:assert');
 const path = require('path');
 const fs = require('fs');
 
-const TEST_DB_PATH = path.join(__dirname, 'test-sender-db.json');
+const TEST_DB_PATH = path.join(__dirname, 'test-sender-db.sqlite');
 process.env.DB_PATH = TEST_DB_PATH;
 
 const db = require('../src/db');
@@ -34,7 +34,8 @@ test('Bulk Sender Queue Tests', async (t) => {
     try { fs.unlinkSync(TEST_DB_PATH); } catch (e) {}
   }
 
-  t.after(() => {
+  t.after(async () => {
+    await db._close();
     if (fs.existsSync(TEST_DB_PATH)) {
       try { fs.unlinkSync(TEST_DB_PATH); } catch (e) {}
     }
@@ -43,6 +44,7 @@ test('Bulk Sender Queue Tests', async (t) => {
   await t.test('Sequentially process sending queue', async () => {
     const batch = {
       id: 'batch_sender_1',
+      templateId: 'tpl_test_campaign',
       status: 'PENDING',
       totalLeads: 2,
       sentCount: 0,
@@ -53,15 +55,15 @@ test('Bulk Sender Queue Tests', async (t) => {
       ]
     };
 
-    db.saveBatch(batch);
+    await db.saveBatch(batch);
 
     // Start send with 0 seconds delay for fast test execution
     await sender.startBulkSend('batch_sender_1', 'Hello {{name}}', 0);
 
     // Wait a bit for the async processQueue loop to finish
-    await new Promise(resolve => setTimeout(resolve, 50));
+    await new Promise(resolve => setTimeout(resolve, 80));
 
-    const finalBatch = db.getBatch('batch_sender_1');
+    const finalBatch = await db.getBatch('batch_sender_1');
     assert.strictEqual(finalBatch.status, 'COMPLETED');
     assert.strictEqual(finalBatch.sentCount, 2);
     assert.strictEqual(finalBatch.leads[0].status, 'SENT');
@@ -73,6 +75,7 @@ test('Bulk Sender Queue Tests', async (t) => {
   await t.test('Cancel campaign mid-dispatch', async () => {
     const batch = {
       id: 'batch_sender_2',
+      templateId: 'tpl_test_campaign',
       status: 'PENDING',
       totalLeads: 3,
       sentCount: 0,
@@ -84,7 +87,7 @@ test('Bulk Sender Queue Tests', async (t) => {
       ]
     };
 
-    db.saveBatch(batch);
+    await db.saveBatch(batch);
 
     // We can intercept the sendTextMessage mock to cancel the batch when it gets called
     let callCount = 0;
@@ -101,9 +104,9 @@ test('Bulk Sender Queue Tests', async (t) => {
     await sender.startBulkSend('batch_sender_2', 'Hey {{name}}', 0.01);
 
     // Wait for worker loop
-    await new Promise(resolve => setTimeout(resolve, 50));
+    await new Promise(resolve => setTimeout(resolve, 80));
 
-    const finalBatch = db.getBatch('batch_sender_2');
+    const finalBatch = await db.getBatch('batch_sender_2');
     assert.strictEqual(finalBatch.status, 'CANCELLED');
     assert.strictEqual(finalBatch.sentCount, 1);
     assert.strictEqual(finalBatch.leads[0].status, 'SENT');

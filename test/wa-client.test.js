@@ -1,6 +1,11 @@
 const test = require('node:test');
 const assert = require('node:assert');
 const axios = require('axios');
+const path = require('path');
+const fs = require('fs');
+
+const TEST_DB_PATH = path.join(__dirname, 'test-client-db.sqlite');
+process.env.DB_PATH = TEST_DB_PATH;
 
 // Mock axios.create before requiring wa-client
 const mockAxiosInstance = {
@@ -12,10 +17,22 @@ test.mock.method(axios, 'create', () => {
   return mockAxiosInstance;
 });
 
-// Now require wa-client
+// Now require wa-client and db
 const waClient = require('../src/wa-client');
+const db = require('../src/db');
 
 test('WhatsApp Gateway Client Tests', async (t) => {
+  if (fs.existsSync(TEST_DB_PATH)) {
+    try { fs.unlinkSync(TEST_DB_PATH); } catch (e) {}
+  }
+
+  t.after(async () => {
+    await db._close();
+    if (fs.existsSync(TEST_DB_PATH)) {
+      try { fs.unlinkSync(TEST_DB_PATH); } catch (e) {}
+    }
+  });
+
   await t.test('getSessionStatus returns CONNECTED', async () => {
     // Mock getSessionUuid first (which calls /sessions)
     test.mock.method(mockAxiosInstance, 'get', async (url) => {
@@ -174,7 +191,7 @@ test('WhatsApp Gateway Client Tests', async (t) => {
     assert.ok(res.message.includes('Reset initiated'));
 
     // Wait a brief moment for the background promise to execute
-    await new Promise(resolve => setTimeout(resolve, 50));
+    await new Promise(resolve => setTimeout(resolve, 80));
 
     assert.strictEqual(stopCalled, true, 'stopSession should have been called');
     assert.strictEqual(startCalled, true, 'startSession should have been called in background');

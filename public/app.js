@@ -9,7 +9,8 @@ let state = {
   activeCampaign: null,
   waStatus: 'DISCONNECTED',
   pollingInterval: null,
-  connectingTime: 0 // Track duration in initializing/authenticating state
+  connectingTime: 0, // Track duration in initializing/authenticating state
+  batches: []
 };
 
 // DOM Elements
@@ -21,6 +22,12 @@ const connectionInfo = document.getElementById('connection-info');
 const waPhone = document.getElementById('wa-phone');
 const waName = document.getElementById('wa-name');
 const btnForceReset = document.getElementById('btn-force-reset');
+
+// Settings Elements
+const settingsUrl = document.getElementById('settings-url');
+const settingsKey = document.getElementById('settings-key');
+const btnSaveSettings = document.getElementById('btn-save-settings');
+const settingsMsg = document.getElementById('settings-msg');
 
 const templateSelect = document.getElementById('template-select');
 const btnNewTemplate = document.getElementById('btn-new-template');
@@ -50,12 +57,15 @@ const progressStatusText = document.getElementById('progress-status-text');
 const btnCancelCampaign = document.getElementById('btn-cancel-campaign');
 
 const logsTbody = document.getElementById('logs-tbody');
+const historyTbody = document.getElementById('history-tbody');
 
 // Initialize
 document.addEventListener('DOMContentLoaded', () => {
   setupEventListeners();
+  loadSettings();
   checkWAStatus();
   loadTemplates();
+  loadCampaignHistory();
   checkActiveCampaign();
   
   // Periodically check WhatsApp status
@@ -67,6 +77,9 @@ function setupEventListeners() {
   // Connection
   btnToggleConnection.addEventListener('click', toggleConnection);
   btnForceReset.addEventListener('click', forceResetConnection);
+
+  // Settings
+  btnSaveSettings.addEventListener('click', saveSettings);
 
   // Templates
   templateSelect.addEventListener('change', (e) => {
@@ -275,6 +288,64 @@ async function forceResetConnection() {
 }
 
 // ==========================================
+// GATEWAY SETTINGS MANAGEMENT
+// ==========================================
+
+async function loadSettings() {
+  try {
+    const res = await fetch(`${API_BASE}/settings`);
+    const data = await res.json();
+    settingsUrl.value = data.openwa_url || '';
+    settingsKey.value = data.api_key || '';
+  } catch (err) {
+    console.error('Failed to load settings:', err);
+  }
+}
+
+async function saveSettings() {
+  const url = settingsUrl.value.trim();
+  const key = settingsKey.value.trim();
+
+  if (!url || !key) {
+    showSettingsMessage('Please fill in both URL and API Key.', 'text-danger');
+    return;
+  }
+
+  try {
+    btnSaveSettings.disabled = true;
+    btnSaveSettings.textContent = 'Saving...';
+    
+    const res = await fetch(`${API_BASE}/settings`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ openwa_url: url, api_key: key })
+    });
+    const data = await res.json();
+    
+    if (data.success) {
+      showSettingsMessage('Settings saved successfully!', 'text-success');
+    } else {
+      showSettingsMessage(data.error || 'Failed to save settings.', 'text-danger');
+    }
+  } catch (err) {
+    console.error('Error saving settings:', err);
+    showSettingsMessage('Failed to save settings.', 'text-danger');
+  } finally {
+    btnSaveSettings.disabled = false;
+    btnSaveSettings.textContent = 'Save Settings';
+    checkWAStatus();
+  }
+}
+
+function showSettingsMessage(msg, className) {
+  settingsMsg.innerHTML = `<span class="${className}">${msg}</span>`;
+  settingsMsg.classList.remove('hidden');
+  setTimeout(() => {
+    settingsMsg.classList.add('hidden');
+  }, 4000);
+}
+
+// ==========================================
 // TEMPLATES MANAGEMENT
 // ==========================================
 
@@ -430,7 +501,7 @@ async function handleFileSelect() {
 }
 
 // ==========================================
-// CAMPAIGN EXECUTION
+// CAMPAIGN EXECUTION & HISTORY
 // ==========================================
 
 async function startCampaign() {
@@ -489,6 +560,7 @@ function pollCampaignProgress() {
       if (!data.isSending && data.status !== 'SENDING') {
         clearInterval(state.pollingInterval);
         state.pollingInterval = null;
+        loadCampaignHistory();
       }
     } catch (err) {
       console.error('Error polling progress:', err);
@@ -524,7 +596,24 @@ function renderLogs(leads) {
   }
 
   logsTbody.innerHTML = '';
-  leads.forEach(l => {
+
+  // DOM Optimization: Limit rendering to the last 30 entries during active runs
+  // to avoid lag and CPU overhead on lists with 100+ items.
+  const maxLogs = 30;
+  const isLarge = leads.length > maxLogs;
+  const leadsToRender = isLarge ? leads.slice(leads.length - maxLogs) : leads;
+
+  if (isLarge) {
+    const infoTr = document.createElement('tr');
+    infoTr.innerHTML = `
+      <td colspan="5" style="text-align: center; color: var(--text-muted); font-size: 13px; padding: 8px; background: rgba(255,255,255,0.02)">
+        Showing last ${maxLogs} logs. Previous ${leads.length - maxLogs} transmissions are running in the background.
+      </td>
+    `;
+    logsTbody.appendChild(infoTr);
+  }
+
+  leadsToRender.forEach(l => {
     const tr = document.createElement('tr');
     
     // Status color
@@ -570,6 +659,50 @@ async function checkActiveCampaign() {
     }
   } catch (err) {
     console.error('Error checking active campaign:', err);
+  }
+}
+
+async function loadCampaignHistory() {
+  try {
+    const res = await fetch(`${API_BASE}/bulk/batches`);
+    const batches = await res.json();
+    state.batches = batches;
+
+    if (batches.length === 0) {
+      historyTbody.innerHTML = `
+        <tr>
+          <td colspan="6" class="no-history" style="text-align: center; color: var(--text-muted); padding: 16px;">
+            No past campaigns available.
+          </td>
+        </tr>
+      `;
+      return;
+    }
+
+    historyTbody.innerHTML = '';
+    batches.forEach(b => {
+      const tr = document.createElement('tr');
+      const dateStr = new Date(b.createdAt).toLocaleString();
+      
+      let statusClass = 'text-muted';
+      if (b.status === 'COMPLETED') statusClass = 'text-success';
+      if (b.status === 'CANCELLED') statusClass = 'text-danger';
+      if (b.status === 'SENDING') statusClass = 'text-primary';
+
+      tr.innerHTML = `
+        <td>${dateStr}</td>
+        <td><strong>${b.totalLeads}</strong></td>
+        <td><span class="text-success">${b.sentCount}</span></td>
+        <td><span class="text-danger">${b.failedCount}</span></td>
+        <td><span class="${statusClass}">${b.status}</span></td>
+        <td>
+          <a href="${API_BASE}/bulk/batches/${b.id}/export" class="btn btn-sm btn-secondary" style="text-decoration:none; display:inline-block; text-align:center;">Download CSV</a>
+        </td>
+      `;
+      historyTbody.appendChild(tr);
+    });
+  } catch (err) {
+    console.error('Failed to load campaign history:', err);
   }
 }
 

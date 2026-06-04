@@ -10,11 +10,14 @@ let activeSendingState = {
 /**
  * Returns the current active sending status.
  */
-function getActiveStatus() {
+async function getActiveStatus() {
   if (!activeSendingState.isSending) {
     return { isSending: false, currentBatchId: null };
   }
-  const batch = getBatch(activeSendingState.currentBatchId);
+  const batch = await getBatch(activeSendingState.currentBatchId);
+  if (!batch) {
+    return { isSending: false, currentBatchId: null };
+  }
   return {
     isSending: true,
     batchId: batch.id,
@@ -77,13 +80,13 @@ async function processQueue(batchId, templateContent, delaySeconds) {
   const delayMs = delaySeconds * 1000;
   
   while (true) {
-    const batch = getBatch(batchId);
+    const batch = await getBatch(batchId);
     if (!batch) break;
 
     // Check for cancellation request
     if (activeSendingState.cancelRequested) {
       batch.status = 'CANCELLED';
-      saveBatch(batch);
+      await saveBatch(batch);
       console.log(`Batch ${batchId} was cancelled by user.`);
       break;
     }
@@ -92,7 +95,7 @@ async function processQueue(batchId, templateContent, delaySeconds) {
     const nextLeadIndex = batch.leads.findIndex(l => l.status === 'PENDING');
     if (nextLeadIndex === -1) {
       batch.status = 'COMPLETED';
-      saveBatch(batch);
+      await saveBatch(batch);
       console.log(`Batch ${batchId} completed successfully.`);
       break;
     }
@@ -103,7 +106,7 @@ async function processQueue(batchId, templateContent, delaySeconds) {
     const waStatus = await getSessionStatus();
     if (waStatus.status !== 'CONNECTED' && waStatus.status !== 'ready') {
       batch.status = 'PAUSED';
-      saveBatch(batch);
+      await saveBatch(batch);
       console.log(`WhatsApp is disconnected (Status: ${waStatus.status}). Pausing batch.`);
       break;
     }
@@ -129,7 +132,7 @@ async function processQueue(batchId, templateContent, delaySeconds) {
     lead.sentMessage = customizedText;
 
     // Save batch progress
-    saveBatch(batch);
+    await saveBatch(batch);
 
     // If there are more leads, wait for the configured delay
     const hasMore = batch.leads.some(l => l.status === 'PENDING');

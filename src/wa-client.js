@@ -1,18 +1,26 @@
 const axios = require('axios');
+const db = require('./db');
 
-const OPENWA_URL = process.env.OPENWA_URL || 'http://localhost:2785/api';
-const API_KEY = process.env.API_KEY || 'dev-admin-key';
 const SESSION_NAME = process.env.SESSION_ID || 'leads-bot-session';
 
-const client = axios.create({
-  baseURL: OPENWA_URL,
-  headers: {
-    'x-api-key': API_KEY,
-    'Content-Type': 'application/json'
-  }
-});
-
 let cachedSessionUuid = null;
+
+/**
+ * Creates an Axios instance dynamically loaded with current SQLite database settings.
+ */
+async function getHttpClient() {
+  const settings = await db.getSettings();
+  const baseURL = settings.openwa_url || process.env.OPENWA_URL || 'http://localhost:2785/api';
+  const apiKey = settings.api_key || process.env.API_KEY || 'dev-admin-key';
+
+  return axios.create({
+    baseURL: baseURL,
+    headers: {
+      'x-api-key': apiKey,
+      'Content-Type': 'application/json'
+    }
+  });
+}
 
 /**
  * Resolves the session's internal UUID by finding it or creating it.
@@ -21,6 +29,8 @@ async function getSessionUuid() {
   if (cachedSessionUuid) {
     return cachedSessionUuid;
   }
+
+  const client = await getHttpClient();
 
   try {
     const res = await client.get('/sessions');
@@ -35,8 +45,6 @@ async function getSessionUuid() {
     cachedSessionUuid = createRes.data.id;
     return cachedSessionUuid;
   } catch (error) {
-    // If the creation returns conflict (409), it means another request created it.
-    // Try listing again to fetch its ID.
     if (error.response && error.response.status === 409) {
       try {
         const res = await client.get('/sessions');
@@ -59,10 +67,11 @@ async function getSessionUuid() {
  */
 async function getSessionStatus() {
   try {
+    const client = await getHttpClient();
     const uuid = await getSessionUuid();
     const res = await client.get(`/sessions/${uuid}`);
     return {
-      status: res.data.status, // e.g. "CONNECTED", "SCAN_QR", "INITIALIZING", "DISCONNECTED"
+      status: res.data.status,
       phone: res.data.phone || null,
       pushName: res.data.pushName || null
     };
@@ -76,6 +85,7 @@ async function getSessionStatus() {
  */
 async function startSession() {
   try {
+    const client = await getHttpClient();
     const uuid = await getSessionUuid();
     const res = await client.post(`/sessions/${uuid}/start`);
     return res.data;
@@ -95,6 +105,7 @@ async function startSession() {
  */
 async function stopSession() {
   try {
+    const client = await getHttpClient();
     const uuid = await getSessionUuid();
     const res = await client.post(`/sessions/${uuid}/stop`);
     return res.data;
@@ -109,11 +120,11 @@ async function stopSession() {
  */
 async function getSessionQR() {
   try {
+    const client = await getHttpClient();
     const uuid = await getSessionUuid();
     const res = await client.get(`/sessions/${uuid}/qr`);
-    return res.data.qrCode; // Returns base64 representation of QR
+    return res.data.qrCode;
   } catch (error) {
-    // If QR code is not ready yet (400), return null gracefully
     if (error.response && error.response.status === 400) {
       return null;
     }
@@ -127,9 +138,9 @@ async function getSessionQR() {
  */
 async function sendTextMessage(phone, text) {
   try {
+    const client = await getHttpClient();
     const uuid = await getSessionUuid();
 
-    // Format phone number to WhatsApp chatId format if not already formatted
     let chatId = phone.trim();
     if (!chatId.endsWith('@c.us')) {
       const cleanNumber = chatId.replace(/[^\d]/g, '');
@@ -160,17 +171,14 @@ async function resetSession() {
   try {
     console.log('Force resetting WhatsApp session (async background launch)...');
     
-    // 1. Try to stop the session
     try {
       await stopSession();
     } catch (err) {
       console.log('Stop session failed during reset (may be already stopped):', err.message);
     }
     
-    // Give it 1 second to release locks
     await new Promise(resolve => setTimeout(resolve, 1000));
     
-    // 2. Locate and delete the session folder
     const sessionDir = path.resolve(__dirname, '..', '..', 'OpenWA', 'data', 'sessions', `session-${SESSION_NAME}`);
     console.log('Cleaning up session directory:', sessionDir);
     
@@ -183,10 +191,8 @@ async function resetSession() {
       }
     }
     
-    // Clear cached UUID
     cachedSessionUuid = null;
     
-    // 3. Recreate and restart session in the background
     getSessionUuid()
       .then(async (uuid) => {
         console.log('Starting session in background after reset...');
