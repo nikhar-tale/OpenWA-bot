@@ -74,6 +74,27 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // Event Listeners
 function setupEventListeners() {
+  // Tab switching logic
+  const tabs = document.querySelectorAll('.nav-tab');
+  tabs.forEach(tab => {
+    tab.addEventListener('click', () => {
+      document.querySelector('.nav-tab.active').classList.remove('active');
+      document.querySelectorAll('.tab-content').forEach(c => c.classList.add('hidden'));
+      
+      tab.classList.add('active');
+      const targetTab = tab.getAttribute('data-tab');
+      document.getElementById(`tab-${targetTab}`).classList.remove('hidden');
+
+      if (targetTab === 'history') {
+        loadCampaignHistory();
+      } else if (targetTab === 'templates') {
+        loadTemplates();
+      } else if (targetTab === 'settings') {
+        loadSettings();
+      }
+    });
+  });
+
   // Connection
   btnToggleConnection.addEventListener('click', toggleConnection);
   btnForceReset.addEventListener('click', forceResetConnection);
@@ -114,6 +135,33 @@ function setupEventListeners() {
   // Campaign
   btnStartCampaign.addEventListener('click', startCampaign);
   btnCancelCampaign.addEventListener('click', cancelCampaign);
+}
+
+// ==========================================
+// TOAST NOTIFICATIONS (POPUP REPLACEMENTS)
+// ==========================================
+
+function showToast(message, type = 'info') {
+  const toastContainer = document.getElementById('toast-container');
+  if (!toastContainer) return;
+
+  const toast = document.createElement('div');
+  toast.className = `toast toast-${type}`;
+
+  let icon = 'ℹ️';
+  if (type === 'success') icon = '✅';
+  if (type === 'error') icon = '❌';
+
+  toast.innerHTML = `<span>${icon}</span> <span>${escapeHtml(message)}</span>`;
+  toastContainer.appendChild(toast);
+
+  // Fade and slide out after 4 seconds
+  setTimeout(() => {
+    toast.style.animation = 'toast-slide-in 0.3s ease reverse forwards';
+    toast.addEventListener('animationend', () => {
+      toast.remove();
+    });
+  }, 4000);
 }
 
 // ==========================================
@@ -237,8 +285,10 @@ async function toggleConnection() {
       try {
         waStatusBadge.textContent = 'Disconnecting...';
         await fetch(`${API_BASE}/session/disconnect`, { method: 'POST' });
+        showToast('Disconnecting WhatsApp session...', 'info');
       } catch (err) {
         console.error('Error disconnecting:', err);
+        showToast('Failed to request disconnect.', 'error');
       } finally {
         checkWAStatus();
       }
@@ -248,8 +298,10 @@ async function toggleConnection() {
       waStatusBadge.textContent = 'Connecting...';
       qrPlaceholder.innerHTML = '<span class="qr-placeholder-text">Initializing session browser...</span>';
       await fetch(`${API_BASE}/session/connect`, { method: 'POST' });
+      showToast('WhatsApp engine initialization started.', 'info');
     } catch (err) {
       console.error('Error connecting:', err);
+      showToast('Failed to start WhatsApp engine.', 'error');
     } finally {
       checkWAStatus();
     }
@@ -267,17 +319,21 @@ async function forceResetConnection() {
     qrPlaceholder.classList.remove('hidden');
     qrPlaceholder.innerHTML = '<span class="qr-placeholder-text">⏳ Cleaning cache and killing browser locks... please wait.</span>';
     
+    showToast('Clearing locks and resetting browser...', 'info');
     const res = await fetch(`${API_BASE}/session/reset`, { method: 'POST' });
     const data = await res.json();
     
     if (data.success) {
       qrPlaceholder.innerHTML = '<span class="qr-placeholder-text text-success">✅ Reset completed! Re-initializing WhatsApp...</span>';
+      showToast('Browser reset initiated successfully!', 'success');
     } else {
       qrPlaceholder.innerHTML = '<span class="qr-placeholder-text text-warning">⚠️ Reset finished with warnings. Checking status...</span>';
+      showToast('Browser reset completed with warnings.', 'info');
     }
   } catch (err) {
     console.error('Error during force reset:', err);
     qrPlaceholder.innerHTML = '<span class="qr-placeholder-text text-danger">❌ Reset failed. Retrying connection...</span>';
+    showToast('Failed to trigger browser reset.', 'error');
   } finally {
     state.connectingTime = 0;
     // Wait 1.5 seconds so the user can read the status message
@@ -307,7 +363,7 @@ async function saveSettings() {
   const key = settingsKey.value.trim();
 
   if (!url || !key) {
-    showSettingsMessage('Please fill in both URL and API Key.', 'text-danger');
+    showToast('Please fill in both URL and API Key.', 'error');
     return;
   }
 
@@ -323,26 +379,18 @@ async function saveSettings() {
     const data = await res.json();
     
     if (data.success) {
-      showSettingsMessage('Settings saved successfully!', 'text-success');
+      showToast('Gateway Settings saved successfully!', 'success');
     } else {
-      showSettingsMessage(data.error || 'Failed to save settings.', 'text-danger');
+      showToast(data.error || 'Failed to save settings.', 'error');
     }
   } catch (err) {
     console.error('Error saving settings:', err);
-    showSettingsMessage('Failed to save settings.', 'text-danger');
+    showToast('Failed to save settings.', 'error');
   } finally {
     btnSaveSettings.disabled = false;
     btnSaveSettings.textContent = 'Save Settings';
     checkWAStatus();
   }
-}
-
-function showSettingsMessage(msg, className) {
-  settingsMsg.innerHTML = `<span class="${className}">${msg}</span>`;
-  settingsMsg.classList.remove('hidden');
-  setTimeout(() => {
-    settingsMsg.classList.add('hidden');
-  }, 4000);
 }
 
 // ==========================================
@@ -398,7 +446,7 @@ async function saveTemplate() {
   const content = templateContent.value.trim();
 
   if (!name || !content) {
-    alert('Please enter both a template name and template content.');
+    showToast('Please enter both a template name and template content.', 'error');
     return;
   }
 
@@ -417,11 +465,11 @@ async function saveTemplate() {
       body: JSON.stringify(payload)
     });
     const saved = await res.json();
-    alert('Template saved successfully!');
+    showToast('Template saved successfully!', 'success');
     await loadTemplates();
     selectTemplate(saved.id);
   } catch (error) {
-    alert('Failed to save template.');
+    showToast('Failed to save template.', 'error');
   }
 }
 
@@ -431,10 +479,10 @@ async function deleteTemplate() {
 
   try {
     await fetch(`${API_BASE}/templates/${state.selectedTemplateId}`, { method: 'DELETE' });
-    alert('Template deleted.');
+    showToast('Template deleted successfully.', 'success');
     await loadTemplates();
   } catch (error) {
-    alert('Failed to delete template.');
+    showToast('Failed to delete template.', 'error');
   }
 }
 
@@ -491,9 +539,10 @@ async function handleFileSelect() {
     campaignReadySection.classList.remove('hidden');
     campaignProgressSection.classList.add('hidden');
     
+    showToast(`Successfully parsed ${data.count} leads from file!`, 'success');
     updatePreview();
   } catch (error) {
-    alert(error.message);
+    showToast(error.message, 'error');
     fileInfoText.textContent = 'Error parsing file';
     state.uploadedLeads = [];
     campaignReadySection.classList.add('hidden');
@@ -506,15 +555,15 @@ async function handleFileSelect() {
 
 async function startCampaign() {
   if (state.uploadedLeads.length === 0) {
-    alert('Please upload a leads file first.');
+    showToast('Please upload a leads file first.', 'error');
     return;
   }
   if (!state.selectedTemplateId) {
-    alert('Please select or create a template.');
+    showToast('Please select or create a template.', 'error');
     return;
   }
   if (state.waStatus !== 'CONNECTED' && state.waStatus !== 'ready') {
-    alert('WhatsApp is not connected. Please scan the QR code and connect first.');
+    showToast('WhatsApp is not connected. Please go to Settings tab to connect first.', 'error');
     return;
   }
 
@@ -536,6 +585,8 @@ async function startCampaign() {
       throw new Error(err.error || 'Failed to start campaign.');
     }
 
+    showToast('Campaign successfully started!', 'success');
+
     // Switch view
     campaignReadySection.classList.add('hidden');
     campaignProgressSection.classList.remove('hidden');
@@ -543,7 +594,7 @@ async function startCampaign() {
     // Start polling campaign progress
     pollCampaignProgress();
   } catch (error) {
-    alert(error.message);
+    showToast(error.message, 'error');
   }
 }
 
@@ -560,6 +611,13 @@ function pollCampaignProgress() {
       if (!data.isSending && data.status !== 'SENDING') {
         clearInterval(state.pollingInterval);
         state.pollingInterval = null;
+        
+        if (data.status === 'COMPLETED') {
+          showToast('Campaign completed successfully!', 'success');
+        } else if (data.status === 'CANCELLED') {
+          showToast('Campaign was cancelled.', 'info');
+        }
+        
         loadCampaignHistory();
       }
     } catch (err) {
@@ -639,9 +697,9 @@ async function cancelCampaign() {
   
   try {
     await fetch(`${API_BASE}/bulk/cancel`, { method: 'POST' });
-    alert('Campaign cancellation requested.');
+    showToast('Campaign cancellation requested...', 'info');
   } catch (error) {
-    alert('Failed to cancel campaign.');
+    showToast('Failed to cancel campaign.', 'error');
   }
 }
 
