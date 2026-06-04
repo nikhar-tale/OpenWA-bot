@@ -76,6 +76,9 @@ async function getSessionStatus() {
       pushName: res.data.pushName || null
     };
   } catch (error) {
+    if (error.response && error.response.status === 404) {
+      cachedSessionUuid = null;
+    }
     return { status: 'UNKNOWN', phone: null, pushName: null, error: error.message };
   }
 }
@@ -90,6 +93,9 @@ async function startSession() {
     const res = await client.post(`/sessions/${uuid}/start`);
     return res.data;
   } catch (error) {
+    if (error.response && error.response.status === 404) {
+      cachedSessionUuid = null;
+    }
     if (error.response && error.response.status === 400 && 
         (error.response.data?.message?.includes('already started') || 
          error.response.data?.message?.includes('already active'))) {
@@ -110,6 +116,9 @@ async function stopSession() {
     const res = await client.post(`/sessions/${uuid}/stop`);
     return res.data;
   } catch (error) {
+    if (error.response && error.response.status === 404) {
+      cachedSessionUuid = null;
+    }
     console.error('Error stopping session:', error.message);
     throw error;
   }
@@ -125,6 +134,9 @@ async function getSessionQR() {
     const res = await client.get(`/sessions/${uuid}/qr`);
     return res.data.qrCode;
   } catch (error) {
+    if (error.response && error.response.status === 404) {
+      cachedSessionUuid = null;
+    }
     if (error.response && error.response.status === 400) {
       return null;
     }
@@ -153,6 +165,9 @@ async function sendTextMessage(phone, text) {
     });
     return { success: true, messageId: res.data.id || res.data.messageId };
   } catch (error) {
+    if (error.response && error.response.status === 404) {
+      cachedSessionUuid = null;
+    }
     console.error(`Failed to send message to ${phone}:`, error.message);
     return { 
       success: false, 
