@@ -616,6 +616,8 @@ function pollCampaignProgress() {
           showToast('Campaign completed successfully!', 'success');
         } else if (data.status === 'CANCELLED') {
           showToast('Campaign was cancelled.', 'info');
+        } else if (data.status === 'PAUSED') {
+          showToast('Campaign paused due to WhatsApp disconnection.', 'error');
         }
         
         loadCampaignHistory();
