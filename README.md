@@ -1,3 +1,13 @@
+---
+title: OpenWA-bot
+emoji: 🤖
+colorFrom: green
+colorTo: teal
+sdk: docker
+app_port: 7860
+pinned: false
+---
+
 # WhatsApp Bulk Messaging Bot MVP
 
 This is the WhatsApp Bulk Messaging Bot MVP designed to send personalized property rental messages sequentially using contacts from Excel/CSV files via the local OpenWA Gateway.

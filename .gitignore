@@ -3,3 +3,5 @@ data/bot-db.json
 test/*.json
 .env
 .DS_Store
+data/*.sqlite
+data/*.sqlite-journal
