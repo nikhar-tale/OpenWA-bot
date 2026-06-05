@@ -154,9 +154,9 @@ app.get('/api/settings', async (req, res) => {
   try {
     const settings = await db.getSettings();
     res.json({
-      openwa_url: settings.openwa_url || process.env.OPENWA_URL || 'http://localhost:2785/api',
-      api_key: settings.api_key || process.env.API_KEY || 'dev-admin-key',
-      hf_token: settings.hf_token || process.env.HF_TOKEN || ''
+      openwa_url: process.env.OPENWA_URL || settings.openwa_url || 'http://localhost:2785/api',
+      api_key: process.env.API_KEY || settings.api_key || 'dev-admin-key',
+      hf_token: process.env.HF_TOKEN || settings.hf_token || ''
     });
   } catch (error) {
     console.error('\x1b[31m[Server API Err]\x1b[0m Error loading settings:', error.message);

@@ -7,9 +7,9 @@ let cachedSessionUuid = null;
 
 async function getHttpClient() {
   const settings = await db.getSettings();
-  const baseURL = settings.openwa_url || process.env.OPENWA_URL || 'http://localhost:2785/api';
-  const apiKey = settings.api_key || process.env.API_KEY || 'dev-admin-key';
-  const hfToken = settings.hf_token || process.env.HF_TOKEN || '';
+  const baseURL = process.env.OPENWA_URL || settings.openwa_url || 'http://localhost:2785/api';
+  const apiKey = process.env.API_KEY || settings.api_key || 'dev-admin-key';
+  const hfToken = process.env.HF_TOKEN || settings.hf_token || '';
 
   const headers = {
     'x-api-key': apiKey,
