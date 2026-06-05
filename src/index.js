@@ -117,7 +117,8 @@ app.get('/api/settings', async (req, res) => {
     const settings = await db.getSettings();
     res.json({
       openwa_url: settings.openwa_url || process.env.OPENWA_URL || 'http://localhost:2785/api',
-      api_key: settings.api_key || process.env.API_KEY || 'dev-admin-key'
+      api_key: settings.api_key || process.env.API_KEY || 'dev-admin-key',
+      hf_token: settings.hf_token || process.env.HF_TOKEN || ''
     });
   } catch (error) {
     console.error('\x1b[31m[Server API Err]\x1b[0m Error loading settings:', error.message);
@@ -127,13 +128,16 @@ app.get('/api/settings', async (req, res) => {
 
 app.post('/api/settings', async (req, res) => {
   try {
-    const { openwa_url, api_key } = req.body;
-    console.log(`\x1b[35m[Server API]\x1b[0m Saving settings: URL = ${openwa_url}, API Key = [MASKED]`);
+    const { openwa_url, api_key, hf_token } = req.body;
+    console.log(`\x1b[35m[Server API]\x1b[0m Saving settings: URL = ${openwa_url}, API Key = [MASKED], HF Token = [MASKED]`);
     if (openwa_url !== undefined) {
       await db.saveSetting('openwa_url', openwa_url.trim());
     }
     if (api_key !== undefined) {
       await db.saveSetting('api_key', api_key.trim());
+    }
+    if (hf_token !== undefined) {
+      await db.saveSetting('hf_token', hf_token.trim());
     }
     console.log('\x1b[32m[Server API]\x1b[0m Settings saved to SQLite successfully.');
     res.json({ success: true, message: 'Settings saved successfully.' });

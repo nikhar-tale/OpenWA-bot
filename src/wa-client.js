@@ -5,20 +5,24 @@ const SESSION_NAME = process.env.SESSION_ID || 'leads-bot-session';
 
 let cachedSessionUuid = null;
 
-/**
- * Creates an Axios instance dynamically loaded with current SQLite database settings.
- */
 async function getHttpClient() {
   const settings = await db.getSettings();
   const baseURL = settings.openwa_url || process.env.OPENWA_URL || 'http://localhost:2785/api';
   const apiKey = settings.api_key || process.env.API_KEY || 'dev-admin-key';
+  const hfToken = settings.hf_token || process.env.HF_TOKEN || '';
+
+  const headers = {
+    'x-api-key': apiKey,
+    'Content-Type': 'application/json'
+  };
+
+  if (hfToken) {
+    headers['Authorization'] = `Bearer ${hfToken}`;
+  }
 
   return axios.create({
     baseURL: baseURL,
-    headers: {
-      'x-api-key': apiKey,
-      'Content-Type': 'application/json'
-    }
+    headers: headers
   });
 }
 

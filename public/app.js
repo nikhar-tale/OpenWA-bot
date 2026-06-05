@@ -72,6 +72,7 @@ const btnForceReset = document.getElementById('btn-force-reset');
 // Settings Elements
 const settingsUrl = document.getElementById('settings-url');
 const settingsKey = document.getElementById('settings-key');
+const settingsHfToken = document.getElementById('settings-hf-token');
 const btnSaveSettings = document.getElementById('btn-save-settings');
 const settingsMsg = document.getElementById('settings-msg');
 
@@ -477,6 +478,7 @@ async function loadSettings() {
     const data = await res.json();
     settingsUrl.value = data.openwa_url || '';
     settingsKey.value = data.api_key || '';
+    settingsHfToken.value = data.hf_token || '';
     console.log('%c[Settings] Settings loaded from database.', 'color: #eab308; font-weight: bold;');
   } catch (err) {
     console.error('Failed to load settings:', err);
@@ -486,6 +488,7 @@ async function loadSettings() {
 async function saveSettings() {
   const url = settingsUrl.value.trim();
   const key = settingsKey.value.trim();
+  const hfToken = settingsHfToken.value.trim();
 
   console.log(`%c[UI Action] Save Settings clicked. URL: ${url}`, 'color: #eab308; font-weight: bold;');
 
@@ -501,7 +504,7 @@ async function saveSettings() {
     const res = await fetch(`${API_BASE}/settings`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ openwa_url: url, api_key: key })
+      body: JSON.stringify({ openwa_url: url, api_key: key, hf_token: hfToken })
     });
     const data = await res.json();
     
