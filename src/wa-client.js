@@ -31,22 +31,26 @@ async function getSessionUuid() {
   }
 
   const client = await getHttpClient();
+  console.log(`\x1b[34m[Gateway Req]\x1b[0m Resolving session UUID for '${SESSION_NAME}'...`);
 
   try {
     const res = await client.get('/sessions');
     const existing = res.data.find(s => s.name === SESSION_NAME);
     if (existing) {
       cachedSessionUuid = existing.id;
+      console.log(`\x1b[35m[Gateway Res]\x1b[0m Resolved session UUID: ${cachedSessionUuid}`);
       return cachedSessionUuid;
     }
 
-    console.log(`Session '${SESSION_NAME}' not found. Creating a new one...`);
+    console.log(`\x1b[33m[Gateway Log]\x1b[0m Session '${SESSION_NAME}' not found. Creating a new one...`);
     const createRes = await client.post('/sessions', { name: SESSION_NAME });
     cachedSessionUuid = createRes.data.id;
+    console.log(`\x1b[35m[Gateway Res]\x1b[0m Session created. UUID: ${cachedSessionUuid}`);
     return cachedSessionUuid;
   } catch (error) {
     if (error.response && error.response.status === 409) {
       try {
+        console.log(`\x1b[33m[Gateway Log]\x1b[0m Session conflict (409). Fetching session uuid list...`);
         const res = await client.get('/sessions');
         const existing = res.data.find(s => s.name === SESSION_NAME);
         if (existing) {
@@ -54,10 +58,10 @@ async function getSessionUuid() {
           return cachedSessionUuid;
         }
       } catch (innerErr) {
-        console.error('Failed to list sessions after 409 Conflict:', innerErr.message);
+        console.error('\x1b[31m[Gateway Err]\x1b[0m Failed to list sessions after 409 Conflict:', innerErr.message);
       }
     }
-    console.error('Error resolving session UUID:', error.message);
+    console.error('\x1b[31m[Gateway Err]\x1b[0m Error resolving session UUID:', error.message);
     throw error;
   }
 }
@@ -77,6 +81,7 @@ async function getSessionStatus() {
     };
   } catch (error) {
     if (error.response && error.response.status === 404) {
+      console.log(`\x1b[33m[Gateway Log]\x1b[0m Stale session UUID (404). Clearing cache...`);
       cachedSessionUuid = null;
     }
     return { status: 'UNKNOWN', phone: null, pushName: null, error: error.message };
@@ -90,7 +95,9 @@ async function startSession() {
   try {
     const client = await getHttpClient();
     const uuid = await getSessionUuid();
+    console.log(`\x1b[34m[Gateway Req]\x1b[0m Starting WhatsApp session (UUID: ${uuid})...`);
     const res = await client.post(`/sessions/${uuid}/start`);
+    console.log(`\x1b[35m[Gateway Res]\x1b[0m Start initiated:`, JSON.stringify(res.data));
     return res.data;
   } catch (error) {
     if (error.response && error.response.status === 404) {
@@ -99,9 +106,10 @@ async function startSession() {
     if (error.response && error.response.status === 400 && 
         (error.response.data?.message?.includes('already started') || 
          error.response.data?.message?.includes('already active'))) {
+      console.log(`\x1b[33m[Gateway Log]\x1b[0m Session already active (400)`);
       return { success: true, message: 'Session already active' };
     }
-    console.error('Error starting session:', error.message);
+    console.error('\x1b[31m[Gateway Err]\x1b[0m Error starting session:', error.message);
     throw error;
   }
 }
@@ -113,13 +121,15 @@ async function stopSession() {
   try {
     const client = await getHttpClient();
     const uuid = await getSessionUuid();
+    console.log(`\x1b[34m[Gateway Req]\x1b[0m Stopping WhatsApp session (UUID: ${uuid})...`);
     const res = await client.post(`/sessions/${uuid}/stop`);
+    console.log(`\x1b[35m[Gateway Res]\x1b[0m Stop completed:`, JSON.stringify(res.data));
     return res.data;
   } catch (error) {
     if (error.response && error.response.status === 404) {
       cachedSessionUuid = null;
     }
-    console.error('Error stopping session:', error.message);
+    console.error('\x1b[31m[Gateway Err]\x1b[0m Error stopping session:', error.message);
     throw error;
   }
 }
@@ -131,16 +141,19 @@ async function getSessionQR() {
   try {
     const client = await getHttpClient();
     const uuid = await getSessionUuid();
+    console.log(`\x1b[34m[Gateway Req]\x1b[0m Fetching QR code for UUID ${uuid}...`);
     const res = await client.get(`/sessions/${uuid}/qr`);
+    console.log(`\x1b[35m[Gateway Res]\x1b[0m QR code fetched successfully.`);
     return res.data.qrCode;
   } catch (error) {
     if (error.response && error.response.status === 404) {
       cachedSessionUuid = null;
     }
     if (error.response && error.response.status === 400) {
+      console.log(`\x1b[33m[Gateway Log]\x1b[0m QR not ready yet (400)`);
       return null;
     }
-    console.error('Error getting QR code:', error.message);
+    console.error('\x1b[31m[Gateway Err]\x1b[0m Error getting QR code:', error.message);
     return null;
   }
 }
@@ -159,16 +172,18 @@ async function sendTextMessage(phone, text) {
       chatId = `${cleanNumber}@c.us`;
     }
 
+    console.log(`\x1b[34m[Gateway Req]\x1b[0m Sending message to ${chatId} (Length: ${text.length})...`);
     const res = await client.post(`/sessions/${uuid}/messages/send-text`, {
       chatId: chatId,
       text: text
     });
+    console.log(`\x1b[35m[Gateway Res]\x1b[0m Message sent successfully. ID: ${res.data.id || res.data.messageId}`);
     return { success: true, messageId: res.data.id || res.data.messageId };
   } catch (error) {
     if (error.response && error.response.status === 404) {
       cachedSessionUuid = null;
     }
-    console.error(`Failed to send message to ${phone}:`, error.message);
+    console.error(`\x1b[31m[Gateway Err]\x1b[0m Failed to send message to ${phone}:`, error.message);
     return { 
       success: false, 
       error: error.response?.data?.message || error.message 
@@ -184,25 +199,25 @@ async function resetSession() {
   const path = require('path');
 
   try {
-    console.log('Force resetting WhatsApp session (async background launch)...');
+    console.log('\x1b[33m[Gateway Log]\x1b[0m Force resetting WhatsApp session (async background launch)...');
     
     try {
       await stopSession();
     } catch (err) {
-      console.log('Stop session failed during reset (may be already stopped):', err.message);
+      console.log('\x1b[33m[Gateway Log]\x1b[0m Stop session failed during reset (may be already stopped):', err.message);
     }
     
     await new Promise(resolve => setTimeout(resolve, 1000));
     
     const sessionDir = path.resolve(__dirname, '..', '..', 'OpenWA', 'data', 'sessions', `session-${SESSION_NAME}`);
-    console.log('Cleaning up session directory:', sessionDir);
+    console.log('\x1b[33m[Gateway Log]\x1b[0m Cleaning up session directory:', sessionDir);
     
     if (fs.existsSync(sessionDir)) {
       try {
         fs.rmSync(sessionDir, { recursive: true, force: true });
-        console.log('Session directory deleted successfully.');
+        console.log('\x1b[35m[Gateway Res]\x1b[0m Session directory deleted successfully.');
       } catch (err) {
-        console.warn('Failed to delete session directory (lock might still exist):', err.message);
+        console.warn('\x1b[31m[Gateway Err]\x1b[0m Failed to delete session directory (lock might still exist):', err.message);
       }
     }
     
@@ -210,21 +225,21 @@ async function resetSession() {
     
     getSessionUuid()
       .then(async (uuid) => {
-        console.log('Starting session in background after reset...');
+        console.log('\x1b[33m[Gateway Log]\x1b[0m Starting session in background after reset...');
         try {
           await startSession();
-          console.log('Session start initiated in background successfully.');
+          console.log('\x1b[35m[Gateway Res]\x1b[0m Session start initiated in background successfully.');
         } catch (startErr) {
-          console.error('Failed to start session in background after reset:', startErr.message);
+          console.error('\x1b[31m[Gateway Err]\x1b[0m Failed to start session in background after reset:', startErr.message);
         }
       })
       .catch((uuidErr) => {
-        console.error('Failed to resolve UUID in background after reset:', uuidErr.message);
+        console.error('\x1b[31m[Gateway Err]\x1b[0m Failed to resolve UUID in background after reset:', uuidErr.message);
       });
     
     return { success: true, message: 'Reset initiated. Browser is restarting in the background.' };
   } catch (error) {
-    console.error('Error during session reset:', error.message);
+    console.error('\x1b[31m[Gateway Err]\x1b[0m Error during session reset:', error.message);
     throw error;
   }
 }

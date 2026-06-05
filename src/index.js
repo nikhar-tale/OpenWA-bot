@@ -15,6 +15,32 @@ const PORT = process.env.PORT || 34567;
 // Setup Middlewares
 app.use(cors());
 app.use(express.json());
+
+// Logger Middleware to capture incoming taps and outgoing responses
+app.use((req, res, next) => {
+  const isPolling = req.url.includes('/session/status') || req.url.includes('/bulk/status') || req.url.includes('/session/qr');
+  const start = Date.now();
+
+  if (isPolling) {
+    const originalJson = res.json;
+    res.json = function(data) {
+      const duration = Date.now() - start;
+      console.log(`\x1b[90m[HTTP Poll] ${req.method} ${req.url} - Status: ${res.statusCode} (${duration}ms)\x1b[0m`);
+      return originalJson.call(this, data);
+    };
+  } else {
+    console.log(`\x1b[36m[HTTP Req]\x1b[0m ${req.method} ${req.url} - Body:`, JSON.stringify(req.body));
+    
+    const originalJson = res.json;
+    res.json = function(data) {
+      const duration = Date.now() - start;
+      console.log(`\x1b[32m[HTTP Res]\x1b[0m ${req.method} ${req.url} - Status: ${res.statusCode} (${duration}ms) - Data:`, JSON.stringify(data));
+      return originalJson.call(this, data);
+    };
+  }
+  next();
+});
+
 app.use(express.static(path.join(__dirname, '..', 'public')));
 
 // Setup Multer for memory upload with a strict 5MB limit
@@ -38,9 +64,12 @@ app.get('/api/session/status', async (req, res) => {
 
 app.post('/api/session/connect', async (req, res) => {
   try {
+    console.log('\x1b[35m[Server API]\x1b[0m Connect request received. Requesting session startup...');
     const result = await waClient.startSession();
+    console.log('\x1b[32m[Server API]\x1b[0m Connect request handled successfully.');
     res.json({ success: true, result });
   } catch (error) {
+    console.error('\x1b[31m[Server API Err]\x1b[0m Error during connect:', error.message);
     res.status(500).json({ error: error.message });
   }
 });
@@ -50,24 +79,31 @@ app.get('/api/session/qr', async (req, res) => {
     const qr = await waClient.getSessionQR();
     res.json({ qr });
   } catch (error) {
+    console.error('\x1b[31m[Server API Err]\x1b[0m Error fetching QR:', error.message);
     res.status(500).json({ error: error.message });
   }
 });
 
 app.post('/api/session/disconnect', async (req, res) => {
   try {
+    console.log('\x1b[35m[Server API]\x1b[0m Disconnect request received. Requesting session stop...');
     const result = await waClient.stopSession();
+    console.log('\x1b[32m[Server API]\x1b[0m Disconnect request handled successfully.');
     res.json({ success: true, result });
   } catch (error) {
+    console.error('\x1b[31m[Server API Err]\x1b[0m Error during disconnect:', error.message);
     res.status(500).json({ error: error.message });
   }
 });
 
 app.post('/api/session/reset', async (req, res) => {
   try {
+    console.log('\x1b[35m[Server API]\x1b[0m Force Reset request received. Cleaning up locks and restarting...');
     const result = await waClient.resetSession();
+    console.log('\x1b[32m[Server API]\x1b[0m Force Reset request initiated.');
     res.json({ success: true, result });
   } catch (error) {
+    console.error('\x1b[31m[Server API Err]\x1b[0m Error during reset:', error.message);
     res.status(500).json({ error: error.message });
   }
 });
@@ -84,6 +120,7 @@ app.get('/api/settings', async (req, res) => {
       api_key: settings.api_key || process.env.API_KEY || 'dev-admin-key'
     });
   } catch (error) {
+    console.error('\x1b[31m[Server API Err]\x1b[0m Error loading settings:', error.message);
     res.status(500).json({ error: error.message });
   }
 });
@@ -91,14 +128,17 @@ app.get('/api/settings', async (req, res) => {
 app.post('/api/settings', async (req, res) => {
   try {
     const { openwa_url, api_key } = req.body;
+    console.log(`\x1b[35m[Server API]\x1b[0m Saving settings: URL = ${openwa_url}, API Key = [MASKED]`);
     if (openwa_url !== undefined) {
       await db.saveSetting('openwa_url', openwa_url.trim());
     }
     if (api_key !== undefined) {
       await db.saveSetting('api_key', api_key.trim());
     }
+    console.log('\x1b[32m[Server API]\x1b[0m Settings saved to SQLite successfully.');
     res.json({ success: true, message: 'Settings saved successfully.' });
   } catch (error) {
+    console.error('\x1b[31m[Server API Err]\x1b[0m Error saving settings:', error.message);
     res.status(500).json({ error: error.message });
   }
 });
@@ -111,6 +151,7 @@ app.get('/api/templates', async (req, res) => {
   try {
     res.json(await db.getTemplates());
   } catch (error) {
+    console.error('\x1b[31m[Server API Err]\x1b[0m Error loading templates:', error.message);
     res.status(500).json({ error: error.message });
   }
 });
@@ -118,24 +159,31 @@ app.get('/api/templates', async (req, res) => {
 app.post('/api/templates', async (req, res) => {
   try {
     const { id, name, content } = req.body;
+    console.log(`\x1b[35m[Server API]\x1b[0m Saving template: ID = ${id || 'NEW'}, Name = "${name}"`);
     if (!name || !content) {
+      console.log('\x1b[31m[Server API]\x1b[0m Save template failed: Missing Name or Content.');
       return res.status(400).json({ error: 'Name and Content are required.' });
     }
 
     const templateId = id || `tpl_${crypto.randomUUID()}`;
     const template = { id: templateId, name, content };
     await db.saveTemplate(template);
+    console.log(`\x1b[32m[Server API]\x1b[0m Template "${name}" (${templateId}) saved successfully.`);
     res.json(template);
   } catch (error) {
+    console.error('\x1b[31m[Server API Err]\x1b[0m Error saving template:', error.message);
     res.status(500).json({ error: error.message });
   }
 });
 
 app.delete('/api/templates/:id', async (req, res) => {
   try {
+    console.log(`\x1b[35m[Server API]\x1b[0m Deleting template ID = ${req.params.id}`);
     await db.deleteTemplate(req.params.id);
+    console.log(`\x1b[32m[Server API]\x1b[0m Template deleted successfully.`);
     res.json({ success: true });
   } catch (error) {
+    console.error('\x1b[31m[Server API Err]\x1b[0m Error deleting template:', error.message);
     res.status(500).json({ error: error.message });
   }
 });
@@ -146,31 +194,37 @@ app.delete('/api/templates/:id', async (req, res) => {
 
 app.post('/api/bulk/upload', upload.single('file'), (req, res) => {
   if (!req.file) {
+    console.log('\x1b[31m[Server API]\x1b[0m Bulk Upload failed: No file uploaded.');
     return res.status(400).json({ error: 'No file uploaded.' });
   }
 
   try {
+    console.log(`\x1b[35m[Server API]\x1b[0m Processing uploaded file: ${req.file.originalname} (${req.file.size} bytes)...`);
     const leads = parseLeadsBuffer(req.file.buffer);
     
     // Validate required columns
     const missingColumns = leads.length > 0 && (!leads[0].name || !leads[0].phone);
     if (missingColumns) {
+      console.log('\x1b[31m[Server API]\x1b[0m Bulk Upload failed: Invalid columns. Name and Phone are required.');
       return res.status(400).json({ 
         error: 'Invalid file format. Make sure the file contains "Name" and "Phone" (or "Phone Number") columns.' 
       });
     }
 
+    console.log(`\x1b[32m[Server API]\x1b[0m Bulk Upload success: Parsed ${leads.length} leads from spreadsheet.`);
     res.json({ count: leads.length, leads });
   } catch (error) {
-    console.error('Error parsing file:', error);
+    console.error('\x1b[31m[Server API Err]\x1b[0m Failed to parse uploaded file:', error);
     res.status(500).json({ error: 'Failed to process file. Ensure it is a valid Excel or CSV file.' });
   }
 });
 
 app.post('/api/bulk/send', async (req, res) => {
   const { templateId, leads, delaySeconds } = req.body;
+  console.log(`\x1b[35m[Server API]\x1b[0m Received start-campaign request. Template ID: ${templateId}, Leads: ${leads?.length || 0}, Delay: ${delaySeconds}s`);
 
   if (!templateId || !leads || !Array.isArray(leads) || leads.length === 0) {
+    console.log('\x1b[31m[Server API]\x1b[0m Campaign failed to start: Missing templateId or empty leads array.');
     return res.status(400).json({ error: 'Template ID and a non-empty leads array are required.' });
   }
 
@@ -181,6 +235,7 @@ app.post('/api/bulk/send', async (req, res) => {
     const templates = await db.getTemplates();
     const template = templates.find(t => t.id === templateId);
     if (!template) {
+      console.log(`\x1b[31m[Server API]\x1b[0m Campaign failed to start: Template ${templateId} not found in database.`);
       return res.status(404).json({ error: 'Template not found.' });
     }
 
@@ -204,15 +259,18 @@ app.post('/api/bulk/send', async (req, res) => {
       }))
     };
 
+    console.log(`\x1b[35m[Server API]\x1b[0m Creating campaign batch in SQLite: ID = ${batchId}, Template Name = "${template.name}"`);
     await db.saveBatch(batch);
 
     // Trigger bulk sending in background (don't await it here, starts immediately)
+    console.log(`\x1b[32m[Server API]\x1b[0m Handing off campaign ${batchId} to Campaign Worker...`);
     sender.startBulkSend(batchId, template.content, delay).catch(err => {
-      console.error('Background batch sending error:', err);
+      console.error('\x1b[31m[Campaign Queue Err]\x1b[0m Background batch sending error:', err);
     });
 
     res.json({ success: true, batchId });
   } catch (error) {
+    console.error('\x1b[31m[Server API Err]\x1b[0m Error initiating campaign:', error.message);
     res.status(500).json({ error: error.message });
   }
 });

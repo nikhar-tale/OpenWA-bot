@@ -1,6 +1,50 @@
 // Configuration
 const API_BASE = '/api';
 
+// Intercept all outgoing fetch requests for detailed logging
+const originalFetch = window.fetch;
+window.fetch = async function(...args) {
+  const url = args[0];
+  const options = args[1] || {};
+  const method = options.method || 'GET';
+  const isPolling = url.includes('/status') || url.includes('/qr');
+  const timestamp = new Date().toLocaleTimeString();
+
+  if (isPolling) {
+    const res = await originalFetch(...args);
+    console.log(`%c[UI Telemetry Poll] ${timestamp} - ${method} ${url} ➔ Status: ${res.status}`, 'color: #94a3b8; font-size: 11px;');
+    return res;
+  } else {
+    console.log(`%c[UI API Req] ${timestamp} - OUTGOING ➔ ${method} ${url}`, 'color: #fb7185; font-weight: bold; background: #1e1b4b; padding: 2px 6px; border-radius: 3px;', {
+      url,
+      method,
+      headers: options.headers,
+      body: options.body ? (typeof options.body === 'string' ? JSON.parse(options.body) : options.body) : undefined
+    });
+
+    const start = performance.now();
+    try {
+      const res = await originalFetch(...args);
+      const duration = (performance.now() - start).toFixed(1);
+      
+      const resClone = res.clone();
+      let responseBody = null;
+      try {
+        responseBody = await resClone.json();
+      } catch (e) {
+        responseBody = 'Non-JSON Response';
+      }
+
+      console.log(`%c[UI API Res] ${timestamp} - INCOMING 🞨 ${method} ${url} ➔ Status: ${res.status} (${duration}ms)`, 'color: #34d399; font-weight: bold; background: #064e3b; padding: 2px 6px; border-radius: 3px;', responseBody);
+      return res;
+    } catch (error) {
+      const duration = (performance.now() - start).toFixed(1);
+      console.log(`%c[UI API Err] ${timestamp} - FAILED 🞨 ${method} ${url} (${duration}ms) ➔ Error: ${error.message}`, 'color: #f43f5e; font-weight: bold; background: #4c0519; padding: 2px 6px; border-radius: 3px;');
+      throw error;
+    }
+  }
+};
+
 // State
 let state = {
   templates: [],
@@ -10,12 +54,14 @@ let state = {
   waStatus: 'DISCONNECTED',
   pollingInterval: null,
   connectingTime: 0, // Track duration in initializing/authenticating state
+  isTransitioning: false, // Prevent background polls from overwriting buttons during active transitions
   batches: []
 };
 
 // DOM Elements
 const waStatusBadge = document.getElementById('wa-status-badge');
 const btnToggleConnection = document.getElementById('btn-toggle-connection');
+const btnHeaderForceReset = document.getElementById('btn-header-force-reset');
 const qrPlaceholder = document.getElementById('qr-placeholder');
 const qrImage = document.getElementById('qr-image');
 const connectionInfo = document.getElementById('connection-info');
@@ -61,6 +107,7 @@ const historyTbody = document.getElementById('history-tbody');
 
 // Initialize
 document.addEventListener('DOMContentLoaded', () => {
+  console.log('%c[App Init] Initializing dashboard client controllers...', 'color: #6366f1; font-weight: bold; font-size: 14px;');
   setupEventListeners();
   loadSettings();
   checkWAStatus();
@@ -85,6 +132,8 @@ function setupEventListeners() {
       const targetTab = tab.getAttribute('data-tab');
       document.getElementById(`tab-${targetTab}`).classList.remove('hidden');
 
+      console.log(`%c[UI Action] Tab Switched ➔ "${targetTab.toUpperCase()}" Workspace`, 'color: #a855f7; font-weight: bold; background: #2e1065; padding: 2px 6px; border-radius: 3px;');
+
       if (targetTab === 'history') {
         loadCampaignHistory();
       } else if (targetTab === 'templates') {
@@ -96,24 +145,55 @@ function setupEventListeners() {
   });
 
   // Connection
-  btnToggleConnection.addEventListener('click', toggleConnection);
-  btnForceReset.addEventListener('click', forceResetConnection);
+  btnToggleConnection.addEventListener('click', () => {
+    console.log('%c[UI Event] Button Tap: Connect/Disconnect Toggle Clicked', 'color: #3b82f6; font-weight: bold; background: #172554; padding: 2px 6px; border-radius: 3px;');
+    toggleConnection();
+  });
+  btnForceReset.addEventListener('click', () => {
+    console.log('%c[UI Event] Button Tap: Force Reset Connection Clicked', 'color: #ef4444; font-weight: bold; background: #450a0a; padding: 2px 6px; border-radius: 3px;');
+    forceResetConnection();
+  });
+  btnHeaderForceReset.addEventListener('click', () => {
+    console.log('%c[UI Event] Button Tap: Header Force Reset Clicked', 'color: #ef4444; font-weight: bold; background: #450a0a; padding: 2px 6px; border-radius: 3px;');
+    forceResetConnection();
+  });
 
   // Settings
-  btnSaveSettings.addEventListener('click', saveSettings);
+  btnSaveSettings.addEventListener('click', () => {
+    console.log('%c[UI Event] Button Tap: Save Settings Clicked', 'color: #eab308; font-weight: bold; background: #422006; padding: 2px 6px; border-radius: 3px;');
+    saveSettings();
+  });
 
   // Templates
   templateSelect.addEventListener('change', (e) => {
+    console.log(`%c[UI Event] Dropdown Selection: Template Changed ➔ ID: ${e.target.value}`, 'color: #ec4899; font-weight: bold; background: #500724; padding: 2px 6px; border-radius: 3px;');
     selectTemplate(e.target.value);
   });
-  btnNewTemplate.addEventListener('click', initNewTemplate);
-  btnSaveTemplate.addEventListener('click', saveTemplate);
-  btnDeleteTemplate.addEventListener('click', deleteTemplate);
-  templateContent.addEventListener('input', updatePreview);
+  btnNewTemplate.addEventListener('click', () => {
+    console.log('%c[UI Event] Button Tap: New Template Clicked', 'color: #ec4899; font-weight: bold; background: #500724; padding: 2px 6px; border-radius: 3px;');
+    initNewTemplate();
+  });
+  btnSaveTemplate.addEventListener('click', () => {
+    console.log('%c[UI Event] Button Tap: Save Template Clicked', 'color: #10b981; font-weight: bold; background: #064e3b; padding: 2px 6px; border-radius: 3px;');
+    saveTemplate();
+  });
+  btnDeleteTemplate.addEventListener('click', () => {
+    console.log('%c[UI Event] Button Tap: Delete Template Clicked', 'color: #ef4444; font-weight: bold; background: #450a0a; padding: 2px 6px; border-radius: 3px;');
+    deleteTemplate();
+  });
+  templateContent.addEventListener('input', () => {
+    updatePreview();
+  });
 
   // File Upload
-  uploadZone.addEventListener('click', () => fileInput.click());
-  fileInput.addEventListener('change', handleFileSelect);
+  uploadZone.addEventListener('click', () => {
+    console.log('%c[UI Event] Click: Upload Area Clicked', 'color: #06b6d4; font-weight: bold; background: #083344; padding: 2px 6px; border-radius: 3px;');
+    fileInput.click();
+  });
+  fileInput.addEventListener('change', () => {
+    console.log('%c[UI Event] Input: File Chosen via File Browser', 'color: #06b6d4; font-weight: bold; background: #083344; padding: 2px 6px; border-radius: 3px;');
+    handleFileSelect();
+  });
   
   // Drag and Drop
   uploadZone.addEventListener('dragover', (e) => {
@@ -127,14 +207,21 @@ function setupEventListeners() {
     e.preventDefault();
     uploadZone.classList.remove('dragover');
     if (e.dataTransfer.files.length > 0) {
+      console.log('%c[UI Event] Drop: Leads spreadsheet dropped onto zone', 'color: #06b6d4; font-weight: bold; background: #083344; padding: 2px 6px; border-radius: 3px;');
       fileInput.files = e.dataTransfer.files;
       handleFileSelect();
     }
   });
 
   // Campaign
-  btnStartCampaign.addEventListener('click', startCampaign);
-  btnCancelCampaign.addEventListener('click', cancelCampaign);
+  btnStartCampaign.addEventListener('click', () => {
+    console.log('%c[UI Event] Button Tap: Start Campaign Clicked', 'color: #10b981; font-weight: bold; background: #064e3b; padding: 2px 6px; border-radius: 3px;');
+    startCampaign();
+  });
+  btnCancelCampaign.addEventListener('click', () => {
+    console.log('%c[UI Event] Button Tap: Cancel Campaign Clicked', 'color: #ef4444; font-weight: bold; background: #450a0a; padding: 2px 6px; border-radius: 3px;');
+    cancelCampaign();
+  });
 }
 
 // ==========================================
@@ -142,6 +229,7 @@ function setupEventListeners() {
 // ==========================================
 
 function showToast(message, type = 'info') {
+  console.log(`%c[Toast Notification] [${type.toUpperCase()}] ${message}`, 'color: #64748b; font-style: italic;');
   const toastContainer = document.getElementById('toast-container');
   if (!toastContainer) return;
 
@@ -172,6 +260,15 @@ async function checkWAStatus() {
   try {
     const res = await fetch(`${API_BASE}/session/status`);
     const data = await res.json();
+
+    if (state.isTransitioning) {
+      console.log('%c[UI Poll] Skipped status poll UI update (transition in progress)', 'color: #94a3b8; font-size: 11px;');
+      return;
+    }
+    
+    if (state.waStatus !== data.status) {
+      console.log(`%c[WA Status Change] ${state.waStatus} ➔ ${data.status}`, 'color: #3b82f6; font-weight: bold;');
+    }
     state.waStatus = data.status;
 
     // Update status badge
@@ -181,12 +278,14 @@ async function checkWAStatus() {
     // Track connecting duration to show Force Reset if it gets stuck
     if (data.status === 'initializing' || data.status === 'authenticating') {
       state.connectingTime += 5;
-      if (state.connectingTime >= 60) {
+      if (state.connectingTime >= 20) {
         btnForceReset.classList.remove('hidden');
+        btnHeaderForceReset.classList.remove('hidden');
       }
     } else {
       state.connectingTime = 0;
       btnForceReset.classList.add('hidden');
+      btnHeaderForceReset.classList.add('hidden');
     }
 
     if (data.status === 'CONNECTED' || data.status === 'ready') {
@@ -259,6 +358,9 @@ async function fetchQR() {
     const data = await res.json();
     if (data.qr) {
       qrImage.src = data.qr;
+      if (qrImage.classList.contains('hidden')) {
+        console.log('%c[WA Connection] QR code loaded and rendered on screen.', 'color: #10b981; font-weight: bold;');
+      }
       qrImage.classList.remove('hidden');
       qrPlaceholder.classList.add('hidden');
     } else {
@@ -273,8 +375,12 @@ async function fetchQR() {
 }
 
 async function toggleConnection() {
+  if (state.isTransitioning) return;
+
   const isConnected = state.waStatus === 'CONNECTED' || state.waStatus === 'ready';
   const isQRReady = state.waStatus === 'SCAN_QR' || state.waStatus === 'qr' || state.waStatus === 'qr_ready';
+
+  console.log(`%c[UI Action] Connection toggle clicked. ConnectedState: ${isConnected}, QRState: ${isQRReady}`, 'color: #3b82f6; font-weight: bold;');
 
   if (isConnected || isQRReady) {
     const confirmMsg = isConnected 
@@ -282,27 +388,37 @@ async function toggleConnection() {
       : 'Are you sure you want to cancel the connection process?';
       
     if (confirm(confirmMsg)) {
+      state.isTransitioning = true;
+      btnToggleConnection.disabled = true;
+      btnToggleConnection.textContent = 'Disconnecting...';
       try {
         waStatusBadge.textContent = 'Disconnecting...';
-        await fetch(`${API_BASE}/session/disconnect`, { method: 'POST' });
         showToast('Disconnecting WhatsApp session...', 'info');
+        await fetch(`${API_BASE}/session/disconnect`, { method: 'POST' });
+        console.log('%c[WA Connection] Disconnect request sent successfully.', 'color: #ef4444; font-weight: bold;');
       } catch (err) {
         console.error('Error disconnecting:', err);
         showToast('Failed to request disconnect.', 'error');
       } finally {
+        state.isTransitioning = false;
         checkWAStatus();
       }
     }
   } else {
+    state.isTransitioning = true;
+    btnToggleConnection.disabled = true;
+    btnToggleConnection.textContent = 'Connecting...';
     try {
       waStatusBadge.textContent = 'Connecting...';
       qrPlaceholder.innerHTML = '<span class="qr-placeholder-text">Initializing session browser...</span>';
-      await fetch(`${API_BASE}/session/connect`, { method: 'POST' });
       showToast('WhatsApp engine initialization started.', 'info');
+      await fetch(`${API_BASE}/session/connect`, { method: 'POST' });
+      console.log('%c[WA Connection] Connect request sent successfully.', 'color: #10b981; font-weight: bold;');
     } catch (err) {
       console.error('Error connecting:', err);
       showToast('Failed to start WhatsApp engine.', 'error');
     } finally {
+      state.isTransitioning = false;
       checkWAStatus();
     }
   }
@@ -313,8 +429,14 @@ async function forceResetConnection() {
     return;
   }
 
+  console.log('%c[UI Action] Force Reset clicked. Destroying session locks...', 'color: #ef4444; font-weight: bold;');
+  state.isTransitioning = true;
+  btnToggleConnection.disabled = true;
+  btnToggleConnection.textContent = 'Resetting...';
+  btnForceReset.classList.add('hidden');
+  btnHeaderForceReset.classList.add('hidden');
+
   try {
-    btnForceReset.classList.add('hidden');
     qrImage.classList.add('hidden');
     qrPlaceholder.classList.remove('hidden');
     qrPlaceholder.innerHTML = '<span class="qr-placeholder-text">⏳ Cleaning cache and killing browser locks... please wait.</span>';
@@ -326,6 +448,7 @@ async function forceResetConnection() {
     if (data.success) {
       qrPlaceholder.innerHTML = '<span class="qr-placeholder-text text-success">✅ Reset completed! Re-initializing WhatsApp...</span>';
       showToast('Browser reset initiated successfully!', 'success');
+      console.log('%c[WA Connection] Force Reset triggered successfully.', 'color: #10b981; font-weight: bold;');
     } else {
       qrPlaceholder.innerHTML = '<span class="qr-placeholder-text text-warning">⚠️ Reset finished with warnings. Checking status...</span>';
       showToast('Browser reset completed with warnings.', 'info');
@@ -338,6 +461,7 @@ async function forceResetConnection() {
     state.connectingTime = 0;
     // Wait 1.5 seconds so the user can read the status message
     setTimeout(() => {
+      state.isTransitioning = false;
       checkWAStatus();
     }, 1500);
   }
@@ -353,6 +477,7 @@ async function loadSettings() {
     const data = await res.json();
     settingsUrl.value = data.openwa_url || '';
     settingsKey.value = data.api_key || '';
+    console.log('%c[Settings] Settings loaded from database.', 'color: #eab308; font-weight: bold;');
   } catch (err) {
     console.error('Failed to load settings:', err);
   }
@@ -361,6 +486,8 @@ async function loadSettings() {
 async function saveSettings() {
   const url = settingsUrl.value.trim();
   const key = settingsKey.value.trim();
+
+  console.log(`%c[UI Action] Save Settings clicked. URL: ${url}`, 'color: #eab308; font-weight: bold;');
 
   if (!url || !key) {
     showToast('Please fill in both URL and API Key.', 'error');
@@ -380,6 +507,7 @@ async function saveSettings() {
     
     if (data.success) {
       showToast('Gateway Settings saved successfully!', 'success');
+      console.log('%c[Settings] Saved settings to SQLite.', 'color: #10b981; font-weight: bold;');
     } else {
       showToast(data.error || 'Failed to save settings.', 'error');
     }
@@ -401,6 +529,7 @@ async function loadTemplates() {
   try {
     const res = await fetch(`${API_BASE}/templates`);
     state.templates = await res.json();
+    console.log(`%c[Templates] Loaded ${state.templates.length} templates from SQLite.`, 'color: #ec4899; font-weight: bold;');
     
     // Fill select dropdown
     templateSelect.innerHTML = '';
@@ -429,6 +558,7 @@ function selectTemplate(id) {
   if (tpl) {
     templateName.value = tpl.name;
     templateContent.value = tpl.content;
+    console.log(`%c[Templates] Selected template: ${tpl.name} (${id})`, 'color: #ec4899; font-weight: bold;');
     updatePreview();
   }
 }
@@ -437,6 +567,7 @@ function initNewTemplate() {
   state.selectedTemplateId = '';
   templateName.value = '';
   templateContent.value = '';
+  console.log('%c[Templates] Initialized new blank template editor.', 'color: #ec4899; font-weight: bold;');
   updatePreview();
   templateName.focus();
 }
@@ -444,6 +575,8 @@ function initNewTemplate() {
 async function saveTemplate() {
   const name = templateName.value.trim();
   const content = templateContent.value.trim();
+
+  console.log(`%c[UI Action] Save Template clicked. Name: ${name}`, 'color: #ec4899; font-weight: bold;');
 
   if (!name || !content) {
     showToast('Please enter both a template name and template content.', 'error');
@@ -466,6 +599,7 @@ async function saveTemplate() {
     });
     const saved = await res.json();
     showToast('Template saved successfully!', 'success');
+    console.log(`%c[Templates] Template saved. ID: ${saved.id}`, 'color: #10b981; font-weight: bold;');
     await loadTemplates();
     selectTemplate(saved.id);
   } catch (error) {
@@ -477,9 +611,12 @@ async function deleteTemplate() {
   if (!state.selectedTemplateId) return;
   if (!confirm('Are you sure you want to delete this template?')) return;
 
+  console.log(`%c[UI Action] Delete Template clicked. ID: ${state.selectedTemplateId}`, 'color: #ef4444; font-weight: bold;');
+
   try {
     await fetch(`${API_BASE}/templates/${state.selectedTemplateId}`, { method: 'DELETE' });
     showToast('Template deleted successfully.', 'success');
+    console.log('%c[Templates] Template deleted successfully.', 'color: #10b981; font-weight: bold;');
     await loadTemplates();
   } catch (error) {
     showToast('Failed to delete template.', 'error');
@@ -514,6 +651,7 @@ async function handleFileSelect() {
   const file = fileInput.files[0];
   if (!file) return;
 
+  console.log(`%c[UI Action] File selected: ${file.name} (${file.size} bytes). Uploading...`, 'color: #10b981; font-weight: bold;');
   fileInfoText.textContent = `${file.name} (${(file.size / 1024).toFixed(1)} KB)`;
   
   const formData = new FormData();
@@ -540,9 +678,11 @@ async function handleFileSelect() {
     campaignProgressSection.classList.add('hidden');
     
     showToast(`Successfully parsed ${data.count} leads from file!`, 'success');
+    console.log(`%c[File Upload] Successfully parsed ${data.count} rows from spreadsheet.`, 'color: #10b981; font-weight: bold;', data.leads);
     updatePreview();
   } catch (error) {
     showToast(error.message, 'error');
+    console.error('%c[File Upload] Upload/Parse error:', 'color: #ef4444; font-weight: bold;', error.message);
     fileInfoText.textContent = 'Error parsing file';
     state.uploadedLeads = [];
     campaignReadySection.classList.add('hidden');
@@ -554,6 +694,8 @@ async function handleFileSelect() {
 // ==========================================
 
 async function startCampaign() {
+  console.log('%c[UI Action] Start Campaign clicked.', 'color: #10b981; font-weight: bold;');
+
   if (state.uploadedLeads.length === 0) {
     showToast('Please upload a leads file first.', 'error');
     return;
@@ -568,6 +710,7 @@ async function startCampaign() {
   }
 
   const delay = parseInt(delayInput.value, 10) || 5;
+  console.log(`%c[Campaign] Triggering campaign. Leads Count: ${state.uploadedLeads.length}, Template ID: ${state.selectedTemplateId}, Delay: ${delay}s`, 'color: #10b981; font-weight: bold;');
 
   try {
     const res = await fetch(`${API_BASE}/bulk/send`, {
@@ -600,6 +743,8 @@ async function startCampaign() {
 
 function pollCampaignProgress() {
   if (state.pollingInterval) clearInterval(state.pollingInterval);
+  
+  console.log('%c[Campaign] Starting progress telemetry polling interval (1500ms)...', 'color: #10b981; font-weight: bold;');
 
   state.pollingInterval = setInterval(async () => {
     try {
@@ -609,6 +754,7 @@ function pollCampaignProgress() {
       updateCampaignProgress(data);
 
       if (!data.isSending && data.status !== 'SENDING') {
+        console.log(`%c[Campaign] Polling stopped. Final campaign status: ${data.status}`, 'color: #10b981; font-weight: bold;');
         clearInterval(state.pollingInterval);
         state.pollingInterval = null;
         
@@ -697,6 +843,8 @@ function renderLogs(leads) {
 async function cancelCampaign() {
   if (!confirm('Are you sure you want to cancel the campaign?')) return;
   
+  console.log('%c[UI Action] Cancel Campaign clicked.', 'color: #ef4444; font-weight: bold;');
+
   try {
     await fetch(`${API_BASE}/bulk/cancel`, { method: 'POST' });
     showToast('Campaign cancellation requested...', 'info');
@@ -710,6 +858,7 @@ async function checkActiveCampaign() {
     const res = await fetch(`${API_BASE}/bulk/status`);
     const data = await res.json();
     if (data.batchId) {
+      console.log(`%c[Campaign] Found active campaign in database on reload. Batch ID: ${data.batchId}`, 'color: #10b981; font-weight: bold;');
       campaignReadySection.classList.add('hidden');
       campaignProgressSection.classList.remove('hidden');
       updateCampaignProgress(data);
@@ -727,6 +876,7 @@ async function loadCampaignHistory() {
     const res = await fetch(`${API_BASE}/bulk/batches`);
     const batches = await res.json();
     state.batches = batches;
+    console.log(`%c[History] Loaded ${batches.length} past campaign batches from SQLite.`, 'color: #3b82f6; font-weight: bold;');
 
     if (batches.length === 0) {
       historyTbody.innerHTML = `
