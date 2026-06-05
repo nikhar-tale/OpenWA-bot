@@ -41,6 +41,44 @@ app.use((req, res, next) => {
   next();
 });
 
+// Basic Auth Middleware to secure the dashboard when deployed publicly
+const basicAuthMiddleware = (req, res, next) => {
+  const adminUser = process.env.ADMIN_USER || 'admin';
+  const adminPassword = process.env.ADMIN_PASSWORD;
+
+  // If no password is set, warn in production but allow in local development
+  if (!adminPassword) {
+    if (process.env.PORT === '7860' || process.env.NODE_ENV === 'production') {
+      console.warn('\x1b[31m[Security Warning]\x1b[0m ADMIN_PASSWORD is not configured! Access blocked.');
+      return res.status(500).send('Configuration Error: ADMIN_PASSWORD must be set as a Hugging Face Space secret to enable access.');
+    }
+    return next();
+  }
+
+  const authHeader = req.headers.authorization;
+  if (!authHeader) {
+    res.setHeader('WWW-Authenticate', 'Basic realm="OpenWA-bot Bulk Dashboard"');
+    return res.status(401).send('Authentication required');
+  }
+
+  try {
+    const auth = Buffer.from(authHeader.split(' ')[1], 'base64').toString().split(':');
+    const user = auth[0];
+    const pass = auth[1];
+
+    if (user === adminUser && pass === adminPassword) {
+      return next();
+    }
+  } catch (err) {
+    console.error('[Security Error] Failed to parse auth header:', err.message);
+  }
+
+  res.setHeader('WWW-Authenticate', 'Basic realm="OpenWA-bot Bulk Dashboard"');
+  return res.status(401).send('Invalid credentials');
+};
+
+app.use(basicAuthMiddleware);
+
 app.use(express.static(path.join(__dirname, '..', 'public')));
 
 // Setup Multer for memory upload with a strict 5MB limit
