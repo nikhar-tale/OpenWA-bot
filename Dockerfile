@@ -19,8 +19,8 @@ RUN (userdel -r node || true) && (groupdel node || true) && \
 # Copy package files
 COPY package*.json ./
 
-# Install dependencies
-RUN npm ci
+# Install dependencies (building native modules from source)
+RUN npm ci --build-from-source
 
 # Copy source code
 COPY . .
