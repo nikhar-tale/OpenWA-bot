@@ -1,6 +1,47 @@
 // Configuration
 const API_BASE = '/api';
 
+// Helper to truncate large telemetry bodies (like leads lists) to prevent console lag
+function truncateTelemetryPayload(payload) {
+  if (!payload) return payload;
+  if (typeof payload !== 'object') {
+    if (typeof payload === 'string' && payload.length > 300) {
+      return payload.substring(0, 300) + '... [TRUNCATED]';
+    }
+    return payload;
+  }
+  
+  if (Array.isArray(payload)) {
+    if (payload.length > 5) {
+      return [
+        ...payload.slice(0, 5).map(item => truncateTelemetryPayload(item)),
+        `... [TRUNCATED ${payload.length - 5} items]`
+      ];
+    }
+    return payload.map(item => truncateTelemetryPayload(item));
+  }
+  
+  const truncatedObj = {};
+  for (const key in payload) {
+    if (Object.prototype.hasOwnProperty.call(payload, key)) {
+      const val = payload[key];
+      if (key === 'leads' && Array.isArray(val) && val.length > 5) {
+        truncatedObj[key] = [
+          ...val.slice(0, 5).map(item => truncateTelemetryPayload(item)),
+          `... [TRUNCATED ${val.length - 5} leads]`
+        ];
+      } else if (typeof val === 'string' && val.length > 300) {
+        truncatedObj[key] = val.substring(0, 300) + '... [TRUNCATED]';
+      } else if (val && typeof val === 'object') {
+        truncatedObj[key] = truncateTelemetryPayload(val);
+      } else {
+        truncatedObj[key] = val;
+      }
+    }
+  }
+  return truncatedObj;
+}
+
 // Intercept all outgoing fetch requests for detailed logging
 const originalFetch = window.fetch;
 window.fetch = async function(...args) {
@@ -19,7 +60,7 @@ window.fetch = async function(...args) {
       url,
       method,
       headers: options.headers,
-      body: options.body ? (typeof options.body === 'string' ? JSON.parse(options.body) : options.body) : undefined
+      body: options.body ? (typeof options.body === 'string' ? truncateTelemetryPayload(JSON.parse(options.body)) : truncateTelemetryPayload(options.body)) : undefined
     });
 
     const start = performance.now();
@@ -35,7 +76,7 @@ window.fetch = async function(...args) {
         responseBody = 'Non-JSON Response';
       }
 
-      console.log(`%c[UI API Res] ${timestamp} - INCOMING 🞨 ${method} ${url} ➔ Status: ${res.status} (${duration}ms)`, 'color: #34d399; font-weight: bold; background: #064e3b; padding: 2px 6px; border-radius: 3px;', responseBody);
+      console.log(`%c[UI API Res] ${timestamp} - INCOMING 🞨 ${method} ${url} ➔ Status: ${res.status} (${duration}ms)`, 'color: #34d399; font-weight: bold; background: #064e3b; padding: 2px 6px; border-radius: 3px;', truncateTelemetryPayload(responseBody));
       return res;
     } catch (error) {
       const duration = (performance.now() - start).toFixed(1);
@@ -169,11 +210,49 @@ document.addEventListener('DOMContentLoaded', () => {
   loadCampaignHistory();
   checkActiveCampaign();
   
-  // Periodically check WhatsApp status
-  setInterval(checkWAStatus, 5000);
+  // Periodically check WhatsApp status (only when tab is active/visible to save resources)
+  setInterval(() => {
+    if (document.visibilityState === 'visible') {
+      checkWAStatus();
+    }
+  }, 5000);
+
+  // Instantly refresh WhatsApp status when user focuses back on the tab
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') {
+      console.log('%c[UI Focus] Tab visible, refreshing system status...', 'color: #6366f1; font-size: 11px;');
+      checkWAStatus();
+    }
+  });
 });
 
 // Event Listeners
+// Reusable helper to configure drag & drop event handling
+function setupDragAndDrop(dropZone, fileInput, dropCallback, logMessage) {
+  if (!dropZone || !fileInput) return;
+
+  dropZone.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    dropZone.classList.add('dragover');
+  });
+
+  dropZone.addEventListener('dragleave', () => {
+    dropZone.classList.remove('dragover');
+  });
+
+  dropZone.addEventListener('drop', (e) => {
+    e.preventDefault();
+    dropZone.classList.remove('dragover');
+    if (e.dataTransfer.files.length > 0) {
+      if (logMessage) {
+        console.log(`%c[UI Event] Drop: ${logMessage}`, 'color: #06b6d4; font-weight: bold; background: #083344; padding: 2px 6px; border-radius: 3px;');
+      }
+      fileInput.files = e.dataTransfer.files;
+      dropCallback();
+    }
+  });
+}
+
 function setupEventListeners() {
   // Tab switching logic
   const tabs = document.querySelectorAll('.nav-tab');
@@ -261,22 +340,7 @@ function setupEventListeners() {
   });
   
   // Drag and Drop
-  uploadZone.addEventListener('dragover', (e) => {
-    e.preventDefault();
-    uploadZone.classList.add('dragover');
-  });
-  uploadZone.addEventListener('dragleave', () => {
-    uploadZone.classList.remove('dragover');
-  });
-  uploadZone.addEventListener('drop', (e) => {
-    e.preventDefault();
-    uploadZone.classList.remove('dragover');
-    if (e.dataTransfer.files.length > 0) {
-      console.log('%c[UI Event] Drop: Leads spreadsheet dropped onto zone', 'color: #06b6d4; font-weight: bold; background: #083344; padding: 2px 6px; border-radius: 3px;');
-      fileInput.files = e.dataTransfer.files;
-      handleFileSelect();
-    }
-  });
+  setupDragAndDrop(uploadZone, fileInput, handleFileSelect, 'Leads spreadsheet dropped onto zone');
 
   // Campaign
   btnStartCampaign.addEventListener('click', () => {
@@ -309,21 +373,7 @@ function setupEventListeners() {
   });
 
   // Drag and Drop for Media
-  mediaDropZone.addEventListener('dragover', (e) => {
-    e.preventDefault();
-    mediaDropZone.classList.add('dragover');
-  });
-  mediaDropZone.addEventListener('dragleave', () => {
-    mediaDropZone.classList.remove('dragover');
-  });
-  mediaDropZone.addEventListener('drop', (e) => {
-    e.preventDefault();
-    mediaDropZone.classList.remove('dragover');
-    if (e.dataTransfer.files.length > 0) {
-      mediaFileInput.files = e.dataTransfer.files;
-      handleMediaFileSelect();
-    }
-  });
+  setupDragAndDrop(mediaDropZone, mediaFileInput, handleMediaFileSelect, 'Campaign media files dropped');
 
   // Quick Test Message Type Selection
   testMessageTypeSelect.addEventListener('change', (e) => {
@@ -346,21 +396,7 @@ function setupEventListeners() {
   });
 
   // Drag and Drop for Quick Test Media
-  testMediaDropZone.addEventListener('dragover', (e) => {
-    e.preventDefault();
-    testMediaDropZone.classList.add('dragover');
-  });
-  testMediaDropZone.addEventListener('dragleave', () => {
-    testMediaDropZone.classList.remove('dragover');
-  });
-  testMediaDropZone.addEventListener('drop', (e) => {
-    e.preventDefault();
-    testMediaDropZone.classList.remove('dragover');
-    if (e.dataTransfer.files.length > 0) {
-      testMediaFileInput.files = e.dataTransfer.files;
-      handleTestMediaFileSelect();
-    }
-  });
+  setupDragAndDrop(testMediaDropZone, testMediaFileInput, handleTestMediaFileSelect, 'Quick test media files dropped');
 
   // Template Message Type Selection
   tplMessageTypeSelect.addEventListener('change', (e) => {
@@ -383,21 +419,7 @@ function setupEventListeners() {
   });
 
   // Drag and Drop for Template Media
-  tplMediaDropZone.addEventListener('dragover', (e) => {
-    e.preventDefault();
-    tplMediaDropZone.classList.add('dragover');
-  });
-  tplMediaDropZone.addEventListener('dragleave', () => {
-    tplMediaDropZone.classList.remove('dragover');
-  });
-  tplMediaDropZone.addEventListener('drop', (e) => {
-    e.preventDefault();
-    tplMediaDropZone.classList.remove('dragover');
-    if (e.dataTransfer.files.length > 0) {
-      tplMediaFileInput.files = e.dataTransfer.files;
-      handleTplMediaFileSelect();
-    }
-  });
+  setupDragAndDrop(tplMediaDropZone, tplMediaFileInput, handleTplMediaFileSelect, 'Template media files dropped');
 
   // Duplicate Template
   btnDuplicateTemplate.addEventListener('click', () => {
