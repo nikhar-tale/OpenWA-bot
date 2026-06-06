@@ -102,25 +102,7 @@ body {
   color: var(--text-muted);
 }
 
-/* Dashboard Grid */
-.dashboard-grid {
-  display: grid;
-  grid-template-columns: 400px 1fr;
-  gap: 24px;
-}
 
-@media (max-width: 900px) {
-  .dashboard-grid {
-    grid-template-columns: 1fr;
-  }
-}
-
-/* Column layouts */
-.column-left, .column-right {
-  display: flex;
-  flex-direction: column;
-  gap: 24px;
-}
 
 /* Cards / Glassmorphism */
 .card {
@@ -642,7 +624,7 @@ body {
 /* Dispatcher tab layout adjustments */
 .dashboard-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 380px 1fr;
   gap: 24px;
 }
 
@@ -661,7 +643,7 @@ body {
 /* Templates grid layout */
 .template-grid {
   display: grid;
-  grid-template-columns: 280px 1fr;
+  grid-template-columns: 320px 1fr;
   gap: 24px;
 }
 
@@ -693,7 +675,7 @@ body {
 /* Settings grid layout */
 .settings-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 380px 1fr;
   gap: 24px;
 }
 

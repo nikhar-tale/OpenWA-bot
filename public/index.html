@@ -221,19 +221,26 @@
 
     <!-- Tab Panel: Templates -->
     <div id="tab-templates" class="tab-content hidden" role="tabpanel" aria-labelledby="tab-btn-templates">
-      <div class="card card-templates">
-        <div class="card-header-actions">
-          <h2>Message Templates Manager</h2>
-          <button id="btn-new-template" class="btn btn-sm btn-secondary">+ New Template</button>
-        </div>
-        <div class="template-grid">
-          <div class="template-list-column">
-            <div class="template-selector-wrapper">
-              <label for="template-select">Select Template:</label>
-              <select id="template-select" class="form-control" size="10"></select>
-            </div>
+      <div class="template-grid">
+        <!-- Left: Template Selection -->
+        <div class="card template-list-card">
+          <div class="card-header-actions">
+            <h2>Templates</h2>
+            <button id="btn-new-template" class="btn btn-sm btn-secondary">+ New</button>
           </div>
-          <div id="template-editor" class="template-editor">
+          <div class="template-selector-wrapper">
+            <label for="template-select" class="status-label">Select Template:</label>
+            <select id="template-select" class="form-control" size="10"></select>
+          </div>
+        </div>
+
+        <!-- Right: Template Editor -->
+        <div id="template-editor" class="card template-editor-card">
+          <div class="card-header-actions">
+            <h2>Edit Template</h2>
+            <button id="btn-duplicate-template" class="btn btn-sm btn-secondary">Duplicate</button>
+          </div>
+          <div class="template-editor-form mt-md">
             <div class="form-group">
               <label for="template-name">Template Name</label>
               <input type="text" id="template-name" class="form-control" placeholder="e.g., Lead Followup">
@@ -274,9 +281,8 @@
               <textarea id="template-content" class="form-control" rows="8" placeholder="Hello {{name}}, thank you for contacting us..."></textarea>
               <span class="variable-tip">Tip: Use <code>{{name}}</code> to insert the customer's name dynamically.</span>
             </div>
-            <div class="editor-actions">
+            <div class="editor-actions mt-xl">
               <button id="btn-save-template" class="btn btn-primary">Save Template</button>
-              <button id="btn-duplicate-template" class="btn btn-secondary">Duplicate</button>
               <button id="btn-delete-template" class="btn btn-danger">Delete</button>
             </div>
           </div>
