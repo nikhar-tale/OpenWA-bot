@@ -794,7 +794,7 @@ async function saveSettings() {
 
   try {
     btnSaveSettings.disabled = true;
-    btnSaveSettings.textContent = 'Saving...';
+    btnSaveSettings.innerHTML = '<span aria-hidden="true">⏳</span> Saving...';
     
     const res = await fetch(`${API_BASE}/settings`, {
       method: 'POST',
@@ -814,7 +814,7 @@ async function saveSettings() {
     showToast('Failed to save settings.', 'error');
   } finally {
     btnSaveSettings.disabled = false;
-    btnSaveSettings.textContent = 'Save Settings';
+    btnSaveSettings.innerHTML = '<span aria-hidden="true">💾</span> Save Settings';
     checkWAStatus();
   }
 }
@@ -936,7 +936,7 @@ async function sendTestMessage() {
 
   try {
     btnSendTest.disabled = true;
-    btnSendTest.textContent = 'Sending...';
+    btnSendTest.innerHTML = '<span aria-hidden="true">⏳</span> Sending...';
     testStatusMsg.className = 'hidden';
 
     const res = await fetch(`${API_BASE}/session/send-test`, {
@@ -984,7 +984,7 @@ async function sendTestMessage() {
     showToast(error.message, 'error');
   } finally {
     btnSendTest.disabled = false;
-    btnSendTest.textContent = '⚡ Send Test Message';
+    btnSendTest.innerHTML = '<span aria-hidden="true">⚡</span> Send Test Message';
   }
 }
 

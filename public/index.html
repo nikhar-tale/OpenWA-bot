@@ -67,7 +67,10 @@
                 <option value="pdf">PDF + Caption</option>
                 <option value="video">Video + Caption</option>
                 <option value="audio">Audio + Caption</option>
-              </select            <!-- Quick Test Media Upload Area -->
+              </select>
+            </div>
+
+            <!-- Quick Test Media Upload Area -->
             <div id="test-media-upload-wrapper" class="media-upload-wrapper hidden mt-md mb-md">
               <label class="media-upload-title">Upload Media Files</label>
               <div class="media-drop-zone media-drop-zone-compact" id="test-media-drop-zone">
@@ -84,7 +87,6 @@
                 </div>
                 <div class="media-files-list-compact" id="test-media-files-list"></div>
               </div>
-            </div></div>
             </div>
 
             <div class="form-group mt-md">
@@ -188,7 +190,7 @@
 
               <div class="camp-status-message">
                 <span>Status: <strong id="progress-status-text">SENDING</strong></span>
-                <button id="btn-cancel-campaign" class="btn btn-sm btn-danger">Cancel campaign</button>
+                <button id="btn-cancel-campaign" class="btn btn-sm btn-danger">Cancel Campaign</button>
               </div>
             </div>
           </div>
@@ -244,7 +246,7 @@
         <div id="template-editor" class="card template-editor-card">
           <div class="card-header-actions">
             <h2>Edit Template</h2>
-            <button id="btn-duplicate-template" class="btn btn-sm btn-secondary">Duplicate</button>
+            <button id="btn-duplicate-template" class="btn btn-sm btn-secondary"><span aria-hidden="true">📋</span> Duplicate</button>
           </div>
           <div class="template-editor-form mt-md">
             <div class="form-group">
@@ -288,8 +290,8 @@
               <span class="variable-tip">Tip: Use <code>{{name}}</code> to insert the customer's name dynamically.</span>
             </div>
             <div class="editor-actions mt-xl">
-              <button id="btn-save-template" class="btn btn-primary">Save Template</button>
-              <button id="btn-delete-template" class="btn btn-danger">Delete</button>
+              <button id="btn-save-template" class="btn btn-primary"><span aria-hidden="true">💾</span> Save Template</button>
+              <button id="btn-delete-template" class="btn btn-danger"><span aria-hidden="true">🗑️</span> Delete</button>
             </div>
           </div>
         </div>
@@ -368,7 +370,7 @@
             <input type="password" id="settings-hf-token" class="form-control" placeholder="hf_...">
           </div>
           <div class="editor-actions mt-xl">
-            <button id="btn-save-settings" class="btn btn-primary w-100">Save Settings</button>
+            <button id="btn-save-settings" class="btn btn-primary w-100"><span aria-hidden="true">💾</span> Save Settings</button>
           </div>
           <div id="settings-msg" class="settings-msg hidden"></div>
         </div>
