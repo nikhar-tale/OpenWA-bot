@@ -732,3 +732,101 @@ body {
 .badge-connected {
   animation: pulse-green 2s infinite;
 }
+
+/* ==========================================
+   MOBILE RESPONSIVENESS OVERRIDES (< 600px)
+   ========================================== */
+@media (max-width: 600px) {
+  body {
+    padding: 12px;
+  }
+
+  .header {
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+    text-align: center;
+  }
+
+  .status-badge-container {
+    width: 100%;
+    justify-content: center;
+    flex-wrap: wrap;
+    padding: 10px;
+    border-radius: 12px;
+  }
+
+  .tab-navigation {
+    width: 100%;
+    flex-wrap: wrap;
+    gap: 4px;
+    justify-content: center;
+  }
+
+  .nav-tab {
+    flex: 1 1 calc(50% - 8px);
+    justify-content: center;
+    padding: 10px 8px;
+    font-size: 13px;
+  }
+
+  .card {
+    padding: 16px;
+  }
+
+  .card-header-actions {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  .delay-wrapper {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .summary-stats, .progress-stats {
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .stat-box {
+    width: 100%;
+  }
+
+  .editor-actions {
+    flex-direction: column;
+    width: 100%;
+  }
+
+  .editor-actions .btn {
+    width: 100%;
+  }
+
+  .logs-table, .history-table {
+    min-width: 600px;
+  }
+
+  .toast-container {
+    left: 12px;
+    right: 12px;
+    top: 12px;
+    max-width: none;
+  }
+
+  .toast {
+    width: 100%;
+    animation: toast-mobile-slide-in 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  }
+}
+
+@keyframes toast-mobile-slide-in {
+  from {
+    transform: translateY(-120%);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
