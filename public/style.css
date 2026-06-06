@@ -76,15 +76,19 @@ body {
 }
 
 .logo-area .icon {
-  font-size: 28px;
+  font-size: 30px;
+  filter: drop-shadow(0 0 8px rgba(239, 68, 68, 0.5));
+  animation: icon-pop 3s ease-in-out infinite;
 }
 
 .logo-area h1 {
   font-size: 24px;
-  font-weight: 700;
-  background: linear-gradient(135deg, #fff 0%, #cbd5e1 100%);
+  font-weight: 800;
+  letter-spacing: -0.5px;
+  background: linear-gradient(135deg, #f97316 0%, #ef4444 40%, #a855f7 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
+  background-clip: text;
 }
 
 .status-badge-container {
@@ -1247,4 +1251,16 @@ body {
 
 .badge-warning {
   animation: pulse-yellow 2s infinite;
+}
+
+/* WA Blaster logo icon breathing animation */
+@keyframes icon-pop {
+  0%, 100% {
+    transform: scale(1);
+    filter: drop-shadow(0 0 8px rgba(239, 68, 68, 0.5));
+  }
+  50% {
+    transform: scale(1.12);
+    filter: drop-shadow(0 0 14px rgba(249, 115, 22, 0.75));
+  }
 }
