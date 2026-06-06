@@ -46,6 +46,7 @@ window.fetch = async function(...args) {
 };
 
 // State
+// State
 let state = {
   templates: [],
   selectedTemplateId: '',
@@ -55,7 +56,25 @@ let state = {
   pollingInterval: null,
   connectingTime: 0, // Track duration in initializing/authenticating state
   isTransitioning: false, // Prevent background polls from overwriting buttons during active transitions
-  batches: []
+  batches: [],
+  messageType: 'text',
+  mediaPath: null,
+  mediaMimetype: null,
+  mediaFilename: null,
+  mediaSize: 0,
+  mediaFiles: [],
+  testMessageType: 'text',
+  testMediaPath: null,
+  testMediaMimetype: null,
+  testMediaFilename: null,
+  testMediaSize: 0,
+  testMediaFiles: [],
+  tplMessageType: 'text',
+  tplMediaPath: null,
+  tplMediaMimetype: null,
+  tplMediaFilename: null,
+  tplMediaSize: 0,
+  tplMediaFiles: []
 };
 
 // DOM Elements
@@ -111,6 +130,34 @@ const btnCancelCampaign = document.getElementById('btn-cancel-campaign');
 
 const logsTbody = document.getElementById('logs-tbody');
 const historyTbody = document.getElementById('history-tbody');
+
+// Media UI Elements
+const messageTypeSelect = document.getElementById('message-type-select');
+const mediaUploadWrapper = document.getElementById('media-upload-wrapper');
+const mediaDropZone = document.getElementById('media-drop-zone');
+const mediaFileInput = document.getElementById('media-file-input');
+const mediaFilesContainer = document.getElementById('media-files-container');
+const mediaFilesSummary = document.getElementById('media-files-summary');
+const mediaFilesList = document.getElementById('media-files-list');
+
+// Quick Test Media UI Elements
+const testMessageTypeSelect = document.getElementById('test-message-type-select');
+const testMediaUploadWrapper = document.getElementById('test-media-upload-wrapper');
+const testMediaDropZone = document.getElementById('test-media-drop-zone');
+const testMediaFileInput = document.getElementById('test-media-file-input');
+const testMediaFilesContainer = document.getElementById('test-media-files-container');
+const testMediaFilesSummary = document.getElementById('test-media-files-summary');
+const testMediaFilesList = document.getElementById('test-media-files-list');
+
+// Template Media UI Elements
+const tplMessageTypeSelect = document.getElementById('tpl-message-type-select');
+const tplMediaUploadWrapper = document.getElementById('tpl-media-upload-wrapper');
+const tplMediaDropZone = document.getElementById('tpl-media-drop-zone');
+const tplMediaFileInput = document.getElementById('tpl-media-file-input');
+const tplMediaFilesContainer = document.getElementById('tpl-media-files-container');
+const tplMediaFilesSummary = document.getElementById('tpl-media-files-summary');
+const tplMediaFilesList = document.getElementById('tpl-media-files-list');
+const btnDuplicateTemplate = document.getElementById('btn-duplicate-template');
 
 // Initialize
 document.addEventListener('DOMContentLoaded', () => {
@@ -235,6 +282,122 @@ function setupEventListeners() {
     console.log('%c[UI Event] Button Tap: Cancel Campaign Clicked', 'color: #ef4444; font-weight: bold; background: #450a0a; padding: 2px 6px; border-radius: 3px;');
     cancelCampaign();
   });
+
+  // Message Type Selection
+  messageTypeSelect.addEventListener('change', (e) => {
+    const type = e.target.value;
+    state.messageType = type;
+    if (type === 'text') {
+      mediaUploadWrapper.classList.add('hidden');
+    } else {
+      mediaUploadWrapper.classList.remove('hidden');
+      renderCampaignFiles();
+    }
+  });
+
+  // Media File Upload Click/Change
+  mediaDropZone.addEventListener('click', () => {
+    mediaFileInput.click();
+  });
+  mediaFileInput.addEventListener('change', () => {
+    handleMediaFileSelect();
+  });
+
+  // Drag and Drop for Media
+  mediaDropZone.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    mediaDropZone.classList.add('dragover');
+  });
+  mediaDropZone.addEventListener('dragleave', () => {
+    mediaDropZone.classList.remove('dragover');
+  });
+  mediaDropZone.addEventListener('drop', (e) => {
+    e.preventDefault();
+    mediaDropZone.classList.remove('dragover');
+    if (e.dataTransfer.files.length > 0) {
+      mediaFileInput.files = e.dataTransfer.files;
+      handleMediaFileSelect();
+    }
+  });
+
+  // Quick Test Message Type Selection
+  testMessageTypeSelect.addEventListener('change', (e) => {
+    const type = e.target.value;
+    state.testMessageType = type;
+    if (type === 'text') {
+      testMediaUploadWrapper.classList.add('hidden');
+    } else {
+      testMediaUploadWrapper.classList.remove('hidden');
+      renderTestFiles();
+    }
+  });
+
+  // Quick Test Media File Upload Click/Change
+  testMediaDropZone.addEventListener('click', () => {
+    testMediaFileInput.click();
+  });
+  testMediaFileInput.addEventListener('change', () => {
+    handleTestMediaFileSelect();
+  });
+
+  // Drag and Drop for Quick Test Media
+  testMediaDropZone.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    testMediaDropZone.classList.add('dragover');
+  });
+  testMediaDropZone.addEventListener('dragleave', () => {
+    testMediaDropZone.classList.remove('dragover');
+  });
+  testMediaDropZone.addEventListener('drop', (e) => {
+    e.preventDefault();
+    testMediaDropZone.classList.remove('dragover');
+    if (e.dataTransfer.files.length > 0) {
+      testMediaFileInput.files = e.dataTransfer.files;
+      handleTestMediaFileSelect();
+    }
+  });
+
+  // Template Message Type Selection
+  tplMessageTypeSelect.addEventListener('change', (e) => {
+    const type = e.target.value;
+    state.tplMessageType = type;
+    if (type === 'text') {
+      tplMediaUploadWrapper.classList.add('hidden');
+    } else {
+      tplMediaUploadWrapper.classList.remove('hidden');
+      renderTplFiles();
+    }
+  });
+
+  // Template Media File Upload Click/Change
+  tplMediaDropZone.addEventListener('click', () => {
+    tplMediaFileInput.click();
+  });
+  tplMediaFileInput.addEventListener('change', () => {
+    handleTplMediaFileSelect();
+  });
+
+  // Drag and Drop for Template Media
+  tplMediaDropZone.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    tplMediaDropZone.classList.add('dragover');
+  });
+  tplMediaDropZone.addEventListener('dragleave', () => {
+    tplMediaDropZone.classList.remove('dragover');
+  });
+  tplMediaDropZone.addEventListener('drop', (e) => {
+    e.preventDefault();
+    tplMediaDropZone.classList.remove('dragover');
+    if (e.dataTransfer.files.length > 0) {
+      tplMediaFileInput.files = e.dataTransfer.files;
+      handleTplMediaFileSelect();
+    }
+  });
+
+  // Duplicate Template
+  btnDuplicateTemplate.addEventListener('click', () => {
+    duplicateTemplate();
+  });
 }
 
 // ==========================================
@@ -350,9 +513,9 @@ async function checkWAStatus() {
         }
         
         if (state.connectingTime >= 60) {
-          statusMsg += `<br><span class="text-danger small" style="display:block;margin-top:8px;">⚠️ Connection taking longer than usual. You can wait or click Force Reset below.</span>`;
+          statusMsg += `<br><span class="text-danger small status-msg-detail">⚠️ Connection taking longer than usual. You can wait or click Force Reset below.</span>`;
         } else if (state.connectingTime >= 30) {
-          statusMsg += `<br><span class="text-warning small" style="display:block;margin-top:8px;">⏳ WhatsApp Web is loading chats... (usually takes 30-45 seconds).</span>`;
+          statusMsg += `<br><span class="text-warning small status-msg-detail">⏳ WhatsApp Web is loading chats... (usually takes 30-45 seconds).</span>`;
         }
         
         qrPlaceholder.innerHTML = `<span class="qr-placeholder-text">${statusMsg}</span>`;
@@ -536,12 +699,113 @@ async function saveSettings() {
   }
 }
 
+async function handleTestMediaFileSelect() {
+  const selectedFiles = Array.from(testMediaFileInput.files);
+  if (selectedFiles.length === 0) return;
+
+  console.log(`%c[Test Media Upload] ${selectedFiles.length} files selected.`, 'color: #10b981; font-weight: bold;');
+
+  const maxSizeBytes = 20 * 1024 * 1024; // 20MB per file
+  const maxCombinedBytes = 50 * 1024 * 1024; // 50MB combined
+  
+  if (state.testMediaFiles.length + selectedFiles.length > 10) {
+    showToast('Maximum of 10 media files can be attached.', 'error');
+    testMediaFileInput.value = '';
+    return;
+  }
+
+  for (const file of selectedFiles) {
+    if (file.size > maxSizeBytes) {
+      showToast(`File "${file.name}" exceeds the 20MB limit.`, 'error');
+      testMediaFileInput.value = '';
+      return;
+    }
+
+    const ext = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
+    let allowed = [];
+    if (state.testMessageType === 'image') allowed = ['.jpg', '.jpeg', '.png'];
+    else if (state.testMessageType === 'pdf') allowed = ['.pdf'];
+    else if (state.testMessageType === 'video') allowed = ['.mp4'];
+    else if (state.testMessageType === 'audio') allowed = ['.mp3'];
+
+    if (!allowed.includes(ext)) {
+      showToast(`Invalid file type for "${file.name}". For ${state.testMessageType}, please upload: ${allowed.join(', ')}`, 'error');
+      testMediaFileInput.value = '';
+      return;
+    }
+  }
+
+  const currentTotal = state.testMediaFiles.reduce((sum, f) => sum + (f.size || 0), 0);
+  const newTotal = selectedFiles.reduce((sum, f) => sum + f.size, 0);
+  if (currentTotal + newTotal > maxCombinedBytes) {
+    showToast('Combined file size exceeds the 50MB limit.', 'error');
+    testMediaFileInput.value = '';
+    return;
+  }
+
+  const formData = new FormData();
+  selectedFiles.forEach(file => {
+    formData.append('media', file);
+  });
+
+  try {
+    showToast('Uploading test media file(s)...', 'info');
+    const res = await fetch(`${API_BASE}/upload-media`, {
+      method: 'POST',
+      body: formData
+    });
+
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error || 'Failed to upload media.');
+    }
+
+    const data = await res.json();
+    const uploadedFiles = data.files || [data];
+    
+    state.testMediaFiles = state.testMediaFiles.concat(uploadedFiles);
+    
+    state.testMediaPath = state.testMediaFiles[0].path;
+    state.testMediaMimetype = state.testMediaFiles[0].mimetype;
+    state.testMediaFilename = state.testMediaFiles[0].filename;
+    state.testMediaSize = state.testMediaFiles[0].size;
+
+    showToast('Test media uploaded successfully!', 'success');
+    renderTestFiles();
+  } catch (error) {
+    showToast(error.message, 'error');
+    console.error('%c[Test Media Upload] Error:', 'color: #ef4444; font-weight: bold;', error.message);
+  } finally {
+    testMediaFileInput.value = '';
+  }
+}
+
+function removeTestMedia() {
+  state.testMediaFiles = [];
+  state.testMediaPath = null;
+  state.testMediaMimetype = null;
+  state.testMediaFilename = null;
+  state.testMediaSize = 0;
+  testMediaFileInput.value = '';
+  renderTestFiles();
+}
+
 async function sendTestMessage() {
   const numbers = testNumbersInput.value.trim();
   const message = testMessageInput.value.trim();
 
-  if (!numbers || !message) {
-    showToast('Please enter both phone numbers and a message.', 'error');
+  if (!numbers) {
+    showToast('Please enter recipient phone number(s).', 'error');
+    return;
+  }
+
+  if (state.testMessageType === 'text' && !message) {
+    showToast('Please enter a test message.', 'error');
+    return;
+  }
+
+  if (state.testMessageType !== 'text' && state.testMediaFiles.length === 0) {
+    showToast('Please upload a media file for this message type.', 'error');
     return;
   }
 
@@ -558,7 +822,15 @@ async function sendTestMessage() {
     const res = await fetch(`${API_BASE}/session/send-test`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ numbers, message })
+      body: JSON.stringify({ 
+        numbers, 
+        message,
+        messageType: state.testMessageType,
+        mediaPath: state.testMediaPath,
+        mediaMimetype: state.testMediaMimetype,
+        mediaFilename: state.testMediaFilename,
+        mediaFiles: state.testMediaFiles
+      })
     });
 
     const data = await res.json();
@@ -574,6 +846,12 @@ async function sendTestMessage() {
       testStatusMsg.className = 'test-status-success';
       testStatusMsg.textContent = `✅ Successfully sent test message to all ${successCount} numbers!`;
       showToast('Test message sent successfully!', 'success');
+      
+      // Reset test media for next test
+      testMessageTypeSelect.value = 'text';
+      state.testMessageType = 'text';
+      removeTestMedia();
+      testMediaUploadWrapper.classList.add('hidden');
     } else {
       testStatusMsg.className = 'test-status-error';
       testStatusMsg.textContent = `❌ Sent successfully to ${successCount} numbers, but failed for ${failCount} numbers.`;
@@ -605,7 +883,8 @@ async function loadTemplates() {
     state.templates.forEach(t => {
       const opt = document.createElement('option');
       opt.value = t.id;
-      opt.textContent = t.name;
+      const badge = t.messageType && t.messageType !== 'text' ? ` [${t.messageType.toUpperCase()}]` : '';
+      opt.textContent = `${t.name}${badge}`;
       templateSelect.appendChild(opt);
     });
 
@@ -628,6 +907,57 @@ function selectTemplate(id) {
     templateName.value = tpl.name;
     templateContent.value = tpl.content;
     console.log(`%c[Templates] Selected template: ${tpl.name} (${id})`, 'color: #ec4899; font-weight: bold;');
+
+    // Sync template media state
+    state.tplMessageType = tpl.messageType || 'text';
+    state.tplMediaFiles = tpl.mediaFiles || [];
+    if (state.tplMediaFiles.length === 0 && tpl.mediaPath) {
+      state.tplMediaFiles = [{
+        path: tpl.mediaPath,
+        mimetype: tpl.mediaMimetype,
+        filename: tpl.mediaFilename,
+        size: null
+      }];
+    }
+
+    state.tplMediaPath = state.tplMediaFiles[0]?.path || null;
+    state.tplMediaMimetype = state.tplMediaFiles[0]?.mimetype || null;
+    state.tplMediaFilename = state.tplMediaFiles[0]?.filename || null;
+
+    tplMessageTypeSelect.value = state.tplMessageType;
+    if (state.tplMessageType === 'text') {
+      tplMediaUploadWrapper.classList.add('hidden');
+    } else {
+      tplMediaUploadWrapper.classList.remove('hidden');
+      renderTplFiles();
+    }
+
+    // Sync Dispatcher campaign console state with selected template automatically
+    state.messageType = tpl.messageType || 'text';
+    state.mediaFiles = tpl.mediaFiles ? [...tpl.mediaFiles] : [];
+    if (state.mediaFiles.length === 0 && tpl.mediaPath) {
+      state.mediaFiles = [{
+        path: tpl.mediaPath,
+        mimetype: tpl.mediaMimetype,
+        filename: tpl.mediaFilename,
+        size: null
+      }];
+    }
+
+    state.mediaPath = state.mediaFiles[0]?.path || null;
+    state.mediaMimetype = state.mediaFiles[0]?.mimetype || null;
+    state.mediaFilename = state.mediaFiles[0]?.filename || null;
+    
+    if (messageTypeSelect) {
+      messageTypeSelect.value = state.messageType;
+      if (state.messageType === 'text') {
+        mediaUploadWrapper.classList.add('hidden');
+      } else {
+        mediaUploadWrapper.classList.remove('hidden');
+        renderCampaignFiles();
+      }
+    }
+
     updatePreview();
   }
 }
@@ -636,6 +966,19 @@ function initNewTemplate() {
   state.selectedTemplateId = '';
   templateName.value = '';
   templateContent.value = '';
+
+  state.tplMessageType = 'text';
+  state.tplMediaPath = null;
+  state.tplMediaMimetype = null;
+  state.tplMediaFilename = null;
+  state.tplMediaSize = 0;
+
+  if (tplMessageTypeSelect) {
+    tplMessageTypeSelect.value = 'text';
+    tplMediaUploadWrapper.classList.add('hidden');
+    removeTplMedia();
+  }
+
   console.log('%c[Templates] Initialized new blank template editor.', 'color: #ec4899; font-weight: bold;');
   updatePreview();
   templateName.focus();
@@ -652,9 +995,20 @@ async function saveTemplate() {
     return;
   }
 
+  // If a media type is selected, verify we actually uploaded a file
+  if (state.tplMessageType !== 'text' && state.tplMediaFiles.length === 0) {
+    showToast('Please upload a media file for this template type.', 'error');
+    return;
+  }
+
   const payload = {
     name,
-    content
+    content,
+    messageType: state.tplMessageType,
+    mediaPath: state.tplMediaPath,
+    mediaMimetype: state.tplMediaMimetype,
+    mediaFilename: state.tplMediaFilename,
+    mediaFiles: state.tplMediaFiles
   };
   if (state.selectedTemplateId) {
     payload.id = state.selectedTemplateId;
@@ -690,6 +1044,133 @@ async function deleteTemplate() {
   } catch (error) {
     showToast('Failed to delete template.', 'error');
   }
+}
+
+async function duplicateTemplate() {
+  if (!state.selectedTemplateId) return;
+  const name = templateName.value.trim();
+  const content = templateContent.value.trim();
+
+  if (!name || !content) {
+    showToast('Please load a template to duplicate.', 'error');
+    return;
+  }
+
+  const payload = {
+    name: `${name} (Copy)`,
+    content,
+    messageType: state.tplMessageType,
+    mediaPath: state.tplMediaPath,
+    mediaMimetype: state.tplMediaMimetype,
+    mediaFilename: state.tplMediaFilename,
+    mediaFiles: state.tplMediaFiles
+  };
+
+  try {
+    const res = await fetch(`${API_BASE}/templates`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const saved = await res.json();
+    showToast('Template duplicated successfully!', 'success');
+    console.log(`%c[Templates] Template duplicated. ID: ${saved.id}`, 'color: #10b981; font-weight: bold;');
+    await loadTemplates();
+    selectTemplate(saved.id);
+  } catch (error) {
+    showToast('Failed to duplicate template.', 'error');
+  }
+}
+
+async function handleTplMediaFileSelect() {
+  const selectedFiles = Array.from(tplMediaFileInput.files);
+  if (selectedFiles.length === 0) return;
+
+  console.log(`%c[Template Media Upload] ${selectedFiles.length} files selected.`, 'color: #10b981; font-weight: bold;');
+
+  const maxSizeBytes = 20 * 1024 * 1024; // 20MB per file
+  const maxCombinedBytes = 50 * 1024 * 1024; // 50MB combined
+  
+  if (state.tplMediaFiles.length + selectedFiles.length > 10) {
+    showToast('Maximum of 10 media files can be attached.', 'error');
+    tplMediaFileInput.value = '';
+    return;
+  }
+
+  for (const file of selectedFiles) {
+    if (file.size > maxSizeBytes) {
+      showToast(`File "${file.name}" exceeds the 20MB limit.`, 'error');
+      tplMediaFileInput.value = '';
+      return;
+    }
+
+    const ext = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
+    let allowed = [];
+    if (state.tplMessageType === 'image') allowed = ['.jpg', '.jpeg', '.png'];
+    else if (state.tplMessageType === 'pdf') allowed = ['.pdf'];
+    else if (state.tplMessageType === 'video') allowed = ['.mp4'];
+    else if (state.tplMessageType === 'audio') allowed = ['.mp3'];
+
+    if (!allowed.includes(ext)) {
+      showToast(`Invalid file type for "${file.name}". For ${state.tplMessageType}, please upload: ${allowed.join(', ')}`, 'error');
+      tplMediaFileInput.value = '';
+      return;
+    }
+  }
+
+  const currentTotal = state.tplMediaFiles.reduce((sum, f) => sum + (f.size || 0), 0);
+  const newTotal = selectedFiles.reduce((sum, f) => sum + f.size, 0);
+  if (currentTotal + newTotal > maxCombinedBytes) {
+    showToast('Combined file size exceeds the 50MB limit.', 'error');
+    tplMediaFileInput.value = '';
+    return;
+  }
+
+  const formData = new FormData();
+  selectedFiles.forEach(file => {
+    formData.append('media', file);
+  });
+
+  try {
+    showToast('Uploading template media file(s)...', 'info');
+    const res = await fetch(`${API_BASE}/upload-media`, {
+      method: 'POST',
+      body: formData
+    });
+
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error || 'Failed to upload media.');
+    }
+
+    const data = await res.json();
+    const uploadedFiles = data.files || [data];
+    
+    state.tplMediaFiles = state.tplMediaFiles.concat(uploadedFiles);
+    
+    state.tplMediaPath = state.tplMediaFiles[0].path;
+    state.tplMediaMimetype = state.tplMediaFiles[0].mimetype;
+    state.tplMediaFilename = state.tplMediaFiles[0].filename;
+    state.tplMediaSize = state.tplMediaFiles[0].size;
+
+    showToast('Template media uploaded successfully!', 'success');
+    renderTplFiles();
+  } catch (error) {
+    showToast(error.message, 'error');
+    console.error('%c[Template Media Upload] Error:', 'color: #ef4444; font-weight: bold;', error.message);
+  } finally {
+    tplMediaFileInput.value = '';
+  }
+}
+
+function removeTplMedia() {
+  state.tplMediaFiles = [];
+  state.tplMediaPath = null;
+  state.tplMediaMimetype = null;
+  state.tplMediaFilename = null;
+  state.tplMediaSize = 0;
+  tplMediaFileInput.value = '';
+  renderTplFiles();
 }
 
 function updatePreview() {
@@ -758,6 +1239,101 @@ async function handleFileSelect() {
   }
 }
 
+async function handleMediaFileSelect() {
+  const selectedFiles = Array.from(mediaFileInput.files);
+  if (selectedFiles.length === 0) return;
+
+  console.log(`%c[Media Upload] ${selectedFiles.length} files selected.`, 'color: #10b981; font-weight: bold;');
+
+  // Validation limits
+  const maxSizeBytes = 20 * 1024 * 1024; // 20MB per file
+  const maxCombinedBytes = 50 * 1024 * 1024; // 50MB combined
+  
+  if (state.mediaFiles.length + selectedFiles.length > 10) {
+    showToast('Maximum of 10 media files can be attached.', 'error');
+    mediaFileInput.value = '';
+    return;
+  }
+
+  // Validate each file size and type
+  for (const file of selectedFiles) {
+    if (file.size > maxSizeBytes) {
+      showToast(`File "${file.name}" exceeds the 20MB limit.`, 'error');
+      mediaFileInput.value = '';
+      return;
+    }
+
+    const ext = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
+    let allowed = [];
+    if (state.messageType === 'image') allowed = ['.jpg', '.jpeg', '.png'];
+    else if (state.messageType === 'pdf') allowed = ['.pdf'];
+    else if (state.messageType === 'video') allowed = ['.mp4'];
+    else if (state.messageType === 'audio') allowed = ['.mp3'];
+
+    if (!allowed.includes(ext)) {
+      showToast(`Invalid file type for "${file.name}". For ${state.messageType}, please upload: ${allowed.join(', ')}`, 'error');
+      mediaFileInput.value = '';
+      return;
+    }
+  }
+
+  // Check combined size
+  const currentTotal = state.mediaFiles.reduce((sum, f) => sum + (f.size || 0), 0);
+  const newTotal = selectedFiles.reduce((sum, f) => sum + f.size, 0);
+  if (currentTotal + newTotal > maxCombinedBytes) {
+    showToast('Combined file size exceeds the 50MB limit.', 'error');
+    mediaFileInput.value = '';
+    return;
+  }
+
+  const formData = new FormData();
+  selectedFiles.forEach(file => {
+    formData.append('media', file);
+  });
+
+  try {
+    showToast('Uploading media file(s)...', 'info');
+    const res = await fetch(`${API_BASE}/upload-media`, {
+      method: 'POST',
+      body: formData
+    });
+
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error || 'Failed to upload media.');
+    }
+
+    const data = await res.json();
+    const uploadedFiles = data.files || [data];
+    
+    state.mediaFiles = state.mediaFiles.concat(uploadedFiles);
+    
+    // Sync fallbacks for backward compatibility
+    state.mediaPath = state.mediaFiles[0].path;
+    state.mediaMimetype = state.mediaFiles[0].mimetype;
+    state.mediaFilename = state.mediaFiles[0].filename;
+    state.mediaSize = state.mediaFiles[0].size;
+
+    showToast('Media uploaded successfully!', 'success');
+    renderCampaignFiles();
+  } catch (error) {
+    showToast(error.message, 'error');
+    console.error('%c[Media Upload] Error:', 'color: #ef4444; font-weight: bold;', error.message);
+  } finally {
+    mediaFileInput.value = '';
+  }
+}
+
+function removeMedia() {
+  state.mediaFiles = [];
+  state.mediaPath = null;
+  state.mediaMimetype = null;
+  state.mediaFilename = null;
+  state.mediaSize = 0;
+  mediaFileInput.value = '';
+  renderCampaignFiles();
+}
+
 // ==========================================
 // CAMPAIGN EXECUTION & HISTORY
 // ==========================================
@@ -781,6 +1357,12 @@ async function startCampaign() {
   const delay = parseInt(delayInput.value, 10) || 5;
   console.log(`%c[Campaign] Triggering campaign. Leads Count: ${state.uploadedLeads.length}, Template ID: ${state.selectedTemplateId}, Delay: ${delay}s`, 'color: #10b981; font-weight: bold;');
 
+  // If a media type is selected, verify we actually uploaded a file
+  if (state.messageType !== 'text' && state.mediaFiles.length === 0) {
+    showToast('Please upload a media file for this campaign type.', 'error');
+    return;
+  }
+
   try {
     const res = await fetch(`${API_BASE}/bulk/send`, {
       method: 'POST',
@@ -788,7 +1370,12 @@ async function startCampaign() {
       body: JSON.stringify({
         templateId: state.selectedTemplateId,
         leads: state.uploadedLeads,
-        delaySeconds: delay
+        delaySeconds: delay,
+        messageType: state.messageType,
+        mediaPath: state.mediaPath,
+        mediaMimetype: state.mediaMimetype,
+        mediaFilename: state.mediaFilename,
+        mediaFiles: state.mediaFiles
       })
     });
 
@@ -802,6 +1389,12 @@ async function startCampaign() {
     // Switch view
     campaignReadySection.classList.add('hidden');
     campaignProgressSection.classList.remove('hidden');
+
+    // Reset media input for future campaigns
+    messageTypeSelect.value = 'text';
+    state.messageType = 'text';
+    removeMedia();
+    mediaUploadWrapper.classList.add('hidden');
 
     // Start polling campaign progress
     pollCampaignProgress();
@@ -881,7 +1474,7 @@ function renderLogs(leads) {
   if (isLarge) {
     const infoTr = document.createElement('tr');
     infoTr.innerHTML = `
-      <td colspan="5" style="text-align: center; color: var(--text-muted); font-size: 13px; padding: 8px; background: rgba(255,255,255,0.02)">
+      <td colspan="5" class="logs-info-row">
         Showing last ${maxLogs} logs. Previous ${leads.length - maxLogs} transmissions are running in the background.
       </td>
     `;
@@ -950,7 +1543,7 @@ async function loadCampaignHistory() {
     if (batches.length === 0) {
       historyTbody.innerHTML = `
         <tr>
-          <td colspan="6" class="no-history" style="text-align: center; color: var(--text-muted); padding: 16px;">
+          <td colspan="6" class="no-history">
             No past campaigns available.
           </td>
         </tr>
@@ -975,7 +1568,7 @@ async function loadCampaignHistory() {
         <td><span class="text-danger">${b.failedCount}</span></td>
         <td><span class="${statusClass}">${b.status}</span></td>
         <td>
-          <a href="${API_BASE}/bulk/batches/${b.id}/export" class="btn btn-sm btn-secondary" style="text-decoration:none; display:inline-block; text-align:center;">Download CSV</a>
+          <a href="${API_BASE}/bulk/batches/${b.id}/export" class="btn btn-sm btn-secondary btn-export-link">Download CSV</a>
         </td>
       `;
       historyTbody.appendChild(tr);
@@ -994,4 +1587,150 @@ function escapeHtml(str) {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#039;');
+}
+
+function renderFilesList(filesArray, listEl, summaryEl, containerEl, dropZoneEl, removeFn, messageType) {
+  listEl.innerHTML = '';
+  
+  if (!filesArray || filesArray.length === 0) {
+    containerEl.classList.add('hidden');
+    if (messageType !== 'text') {
+      dropZoneEl.classList.remove('hidden');
+    }
+    return;
+  }
+  
+  containerEl.classList.remove('hidden');
+  
+  const count = filesArray.length;
+  const totalSize = filesArray.reduce((sum, f) => sum + (f.size || 0), 0);
+  const totalSizeMB = (totalSize / 1024 / 1024).toFixed(2);
+  summaryEl.textContent = `${count} file(s) attached (${totalSizeMB} MB / Max 50 MB)`;
+  
+  if (count >= 10) {
+    dropZoneEl.classList.add('hidden');
+  } else if (messageType !== 'text') {
+    dropZoneEl.classList.remove('hidden');
+  }
+  
+  filesArray.forEach((file, index) => {
+    const fileItem = document.createElement('div');
+    fileItem.className = 'media-preview-card media-preview-card-item';
+    
+    const isImage = messageType === 'image';
+    const filenameOnly = file.path ? file.path.replace(/\\/g, '/').split('/').pop() : file.filename;
+    
+    fileItem.innerHTML = `
+      <div class="media-preview-details">
+        ${isImage ? `
+          <div class="media-preview-thumbnail-container media-preview-thumbnail-container-compact">
+            <img src="/uploads/${filenameOnly}" alt="Thumbnail Preview" class="media-preview-thumbnail-img">
+          </div>
+        ` : ''}
+        <div class="media-preview-info">
+          <div class="media-preview-filename">
+            ${escapeHtml(file.filename)}
+          </div>
+          <div class="media-preview-size">
+            ${file.size ? `${(file.size / 1024 / 1024).toFixed(2)} MB` : 'Size unknown'}
+          </div>
+        </div>
+        <button type="button" class="btn btn-sm btn-danger btn-remove-file">Remove</button>
+      </div>
+    `;
+    
+    const removeBtn = fileItem.querySelector('.btn-remove-file');
+    removeBtn.addEventListener('click', () => {
+      removeFn(index);
+    });
+    
+    listEl.appendChild(fileItem);
+  });
+}
+
+function removeMediaFile(index) {
+  state.mediaFiles.splice(index, 1);
+  if (state.mediaFiles.length === 0) {
+    state.mediaPath = null;
+    state.mediaMimetype = null;
+    state.mediaFilename = null;
+    state.mediaSize = 0;
+  } else {
+    state.mediaPath = state.mediaFiles[0].path;
+    state.mediaMimetype = state.mediaFiles[0].mimetype;
+    state.mediaFilename = state.mediaFiles[0].filename;
+    state.mediaSize = state.mediaFiles[0].size;
+  }
+  mediaFileInput.value = '';
+  renderCampaignFiles();
+}
+
+function renderCampaignFiles() {
+  renderFilesList(
+    state.mediaFiles,
+    mediaFilesList,
+    mediaFilesSummary,
+    mediaFilesContainer,
+    mediaDropZone,
+    removeMediaFile,
+    state.messageType
+  );
+}
+
+function removeTestMediaFile(index) {
+  state.testMediaFiles.splice(index, 1);
+  if (state.testMediaFiles.length === 0) {
+    state.testMediaPath = null;
+    state.testMediaMimetype = null;
+    state.testMediaFilename = null;
+    state.testMediaSize = 0;
+  } else {
+    state.testMediaPath = state.testMediaFiles[0].path;
+    state.testMediaMimetype = state.testMediaFiles[0].mimetype;
+    state.testMediaFilename = state.testMediaFiles[0].filename;
+    state.testMediaSize = state.testMediaFiles[0].size;
+  }
+  testMediaFileInput.value = '';
+  renderTestFiles();
+}
+
+function renderTestFiles() {
+  renderFilesList(
+    state.testMediaFiles,
+    testMediaFilesList,
+    testMediaFilesSummary,
+    testMediaFilesContainer,
+    testMediaDropZone,
+    removeTestMediaFile,
+    state.testMessageType
+  );
+}
+
+function removeTplMediaFile(index) {
+  state.tplMediaFiles.splice(index, 1);
+  if (state.tplMediaFiles.length === 0) {
+    state.tplMediaPath = null;
+    state.tplMediaMimetype = null;
+    state.tplMediaFilename = null;
+    state.tplMediaSize = 0;
+  } else {
+    state.tplMediaPath = state.tplMediaFiles[0].path;
+    state.tplMediaMimetype = state.tplMediaFiles[0].mimetype;
+    state.tplMediaFilename = state.tplMediaFiles[0].filename;
+    state.tplMediaSize = state.tplMediaFiles[0].size;
+  }
+  tplMediaFileInput.value = '';
+  renderTplFiles();
+}
+
+function renderTplFiles() {
+  renderFilesList(
+    state.tplMediaFiles,
+    tplMediaFilesList,
+    tplMediaFilesSummary,
+    tplMediaFilesContainer,
+    tplMediaDropZone,
+    removeTplMediaFile,
+    state.tplMessageType
+  );
 }
