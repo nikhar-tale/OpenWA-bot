@@ -77,21 +77,25 @@ function showConfirmModal(title, message, confirmText = 'Confirm', cancelText = 
     
     confirmBtn.focus();
     
-    confirmBtn.addEventListener('click', () => {
+    const closeModal = (value) => {
       modalOverlay.remove();
-      resolve(true);
-    });
+      document.removeEventListener('keydown', handleKeyDown);
+      resolve(value);
+    };
     
-    cancelBtn.addEventListener('click', () => {
-      modalOverlay.remove();
-      resolve(false);
+    confirmBtn.addEventListener('click', () => closeModal(true));
+    cancelBtn.addEventListener('click', () => closeModal(false));
+    
+    modalOverlay.addEventListener('click', (e) => {
+      if (e.target === modalOverlay) {
+        closeModal(false);
+      }
     });
     
     const handleKeyDown = (e) => {
       if (e.key === 'Escape') {
-        modalOverlay.remove();
-        document.removeEventListener('keydown', handleKeyDown);
-        resolve(false);
+        e.preventDefault();
+        closeModal(false);
       }
     };
     document.addEventListener('keydown', handleKeyDown);
