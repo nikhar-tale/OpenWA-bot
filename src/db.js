@@ -74,6 +74,44 @@ const initPromise = (async () => {
     )
   `);
 
+  // Upgrade batches table if needed for Phase 1 Media
+  const tableInfo = await allQuery("PRAGMA table_info(batches)");
+  const columns = tableInfo.map(c => c.name);
+  if (!columns.includes('messageType')) {
+    await runQuery("ALTER TABLE batches ADD COLUMN messageType TEXT DEFAULT 'text'");
+  }
+  if (!columns.includes('mediaPath')) {
+    await runQuery("ALTER TABLE batches ADD COLUMN mediaPath TEXT");
+  }
+  if (!columns.includes('mediaMimetype')) {
+    await runQuery("ALTER TABLE batches ADD COLUMN mediaMimetype TEXT");
+  }
+  if (!columns.includes('mediaFilename')) {
+    await runQuery("ALTER TABLE batches ADD COLUMN mediaFilename TEXT");
+  }
+  if (!columns.includes('mediaFiles')) {
+    await runQuery("ALTER TABLE batches ADD COLUMN mediaFiles TEXT DEFAULT '[]'");
+  }
+
+  // Upgrade templates table if needed for Phase 2 Media Templates
+  const templatesTableInfo = await allQuery("PRAGMA table_info(templates)");
+  const templatesColumns = templatesTableInfo.map(c => c.name);
+  if (!templatesColumns.includes('messageType')) {
+    await runQuery("ALTER TABLE templates ADD COLUMN messageType TEXT DEFAULT 'text'");
+  }
+  if (!templatesColumns.includes('mediaPath')) {
+    await runQuery("ALTER TABLE templates ADD COLUMN mediaPath TEXT");
+  }
+  if (!templatesColumns.includes('mediaMimetype')) {
+    await runQuery("ALTER TABLE templates ADD COLUMN mediaMimetype TEXT");
+  }
+  if (!templatesColumns.includes('mediaFilename')) {
+    await runQuery("ALTER TABLE templates ADD COLUMN mediaFilename TEXT");
+  }
+  if (!templatesColumns.includes('mediaFiles')) {
+    await runQuery("ALTER TABLE templates ADD COLUMN mediaFiles TEXT DEFAULT '[]'");
+  }
+
   // Default templates seeding
   const defaultTemplates = [
     {
@@ -105,14 +143,42 @@ async function ensureInit() {
 // Templates API
 async function getTemplates() {
   await ensureInit();
-  return await allQuery('SELECT * FROM templates');
+  const rows = await allQuery('SELECT * FROM templates');
+  return rows.map(row => ({
+    id: row.id,
+    name: row.name,
+    content: row.content,
+    messageType: row.messageType || 'text',
+    mediaPath: row.mediaPath || null,
+    mediaMimetype: row.mediaMimetype || null,
+    mediaFilename: row.mediaFilename || null,
+    mediaFiles: row.mediaFiles ? JSON.parse(row.mediaFiles) : []
+  }));
 }
 
 async function saveTemplate(template) {
   await ensureInit();
   await runQuery(
-    'INSERT INTO templates (id, name, content) VALUES (?, ?, ?) ON CONFLICT(id) DO UPDATE SET name=excluded.name, content=excluded.content',
-    [template.id, template.name, template.content]
+    `INSERT INTO templates (id, name, content, messageType, mediaPath, mediaMimetype, mediaFilename, mediaFiles) 
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?) 
+     ON CONFLICT(id) DO UPDATE SET 
+       name = excluded.name, 
+       content = excluded.content,
+       messageType = excluded.messageType,
+       mediaPath = excluded.mediaPath,
+       mediaMimetype = excluded.mediaMimetype,
+       mediaFilename = excluded.mediaFilename,
+       mediaFiles = excluded.mediaFiles`,
+    [
+      template.id,
+      template.name,
+      template.content,
+      template.messageType || 'text',
+      template.mediaPath || null,
+      template.mediaMimetype || null,
+      template.mediaFilename || null,
+      template.mediaFiles ? JSON.stringify(template.mediaFiles) : '[]'
+    ]
   );
   return template;
 }
@@ -135,7 +201,12 @@ async function getBatches() {
     failedCount: row.failedCount,
     createdAt: row.createdAt,
     delaySeconds: row.delaySeconds,
-    leads: JSON.parse(row.leads)
+    leads: JSON.parse(row.leads),
+    messageType: row.messageType || 'text',
+    mediaPath: row.mediaPath || null,
+    mediaMimetype: row.mediaMimetype || null,
+    mediaFilename: row.mediaFilename || null,
+    mediaFiles: row.mediaFiles ? JSON.parse(row.mediaFiles) : []
   }));
 }
 
@@ -152,15 +223,20 @@ async function getBatch(id) {
     failedCount: row.failedCount,
     createdAt: row.createdAt,
     delaySeconds: row.delaySeconds,
-    leads: JSON.parse(row.leads)
+    leads: JSON.parse(row.leads),
+    messageType: row.messageType || 'text',
+    mediaPath: row.mediaPath || null,
+    mediaMimetype: row.mediaMimetype || null,
+    mediaFilename: row.mediaFilename || null,
+    mediaFiles: row.mediaFiles ? JSON.parse(row.mediaFiles) : []
   };
 }
 
 async function saveBatch(batch) {
   await ensureInit();
   await runQuery(
-    `INSERT INTO batches (id, templateId, status, totalLeads, sentCount, failedCount, createdAt, delaySeconds, leads) 
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) 
+    `INSERT INTO batches (id, templateId, status, totalLeads, sentCount, failedCount, createdAt, delaySeconds, leads, messageType, mediaPath, mediaMimetype, mediaFilename, mediaFiles) 
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) 
      ON CONFLICT(id) DO UPDATE SET 
        status = excluded.status,
        sentCount = excluded.sentCount,
@@ -175,7 +251,12 @@ async function saveBatch(batch) {
       batch.failedCount,
       batch.createdAt || new Date().toISOString(),
       batch.delaySeconds || 0,
-      JSON.stringify(batch.leads)
+      JSON.stringify(batch.leads),
+      batch.messageType || 'text',
+      batch.mediaPath || null,
+      batch.mediaMimetype || null,
+      batch.mediaFilename || null,
+      batch.mediaFiles ? JSON.stringify(batch.mediaFiles) : '[]'
     ]
   );
   return batch;

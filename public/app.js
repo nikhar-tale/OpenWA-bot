@@ -42,6 +42,62 @@ function truncateTelemetryPayload(payload) {
   return truncatedObj;
 }
 
+// Custom accessible async confirmation modal system
+function showConfirmModal(title, message, confirmText = 'Confirm', cancelText = 'Cancel') {
+  return new Promise((resolve) => {
+    const modalOverlay = document.createElement('div');
+    modalOverlay.className = 'modal-overlay';
+    
+    const modal = document.createElement('div');
+    modal.className = 'modal-card';
+    modal.setAttribute('role', 'dialog');
+    modal.setAttribute('aria-modal', 'true');
+    
+    const isWarning = title.toLowerCase().includes('delete') || title.toLowerCase().includes('reset') || title.toLowerCase().includes('cancel');
+    const confirmBtnClass = isWarning ? 'btn btn-danger btn-confirm' : 'btn btn-primary btn-confirm';
+    
+    modal.innerHTML = `
+      <div class="modal-header">
+        <h3>${escapeHtml(title)}</h3>
+      </div>
+      <div class="modal-body">
+        <p>${message.replace(/\n/g, '<br>')}</p>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-secondary btn-cancel">${escapeHtml(cancelText)}</button>
+        <button class="${confirmBtnClass}">${escapeHtml(confirmText)}</button>
+      </div>
+    `;
+    
+    modalOverlay.appendChild(modal);
+    document.body.appendChild(modalOverlay);
+    
+    const confirmBtn = modal.querySelector('.btn-confirm');
+    const cancelBtn = modal.querySelector('.btn-cancel');
+    
+    confirmBtn.focus();
+    
+    confirmBtn.addEventListener('click', () => {
+      modalOverlay.remove();
+      resolve(true);
+    });
+    
+    cancelBtn.addEventListener('click', () => {
+      modalOverlay.remove();
+      resolve(false);
+    });
+    
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        modalOverlay.remove();
+        document.removeEventListener('keydown', handleKeyDown);
+        resolve(false);
+      }
+    };
+    document.addEventListener('keydown', handleKeyDown);
+  });
+}
+
 // Intercept all outgoing fetch requests for detailed logging
 const originalFetch = window.fetch;
 window.fetch = async function(...args) {
@@ -425,6 +481,38 @@ function setupEventListeners() {
   btnDuplicateTemplate.addEventListener('click', () => {
     duplicateTemplate();
   });
+
+  // Keyboard Shortcuts (Alt + 1-4 for Tabs, Ctrl + N for New Template, Ctrl + S for Save Template)
+  document.addEventListener('keydown', (e) => {
+    // Tab switching: Alt + 1, Alt + 2, Alt + 3, Alt + 4
+    if (e.altKey && e.key >= '1' && e.key <= '4') {
+      e.preventDefault();
+      const tabKeys = ['dispatcher', 'templates', 'history', 'settings'];
+      const targetTab = tabKeys[parseInt(e.key) - 1];
+      const tabButton = document.querySelector(`.nav-tab[data-tab="${targetTab}"]`);
+      if (tabButton) {
+        tabButton.click();
+      }
+    }
+
+    // New Template: Ctrl + N or Cmd + N (when on templates tab)
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'n') {
+      const activeTab = document.querySelector('.nav-tab.active');
+      if (activeTab && activeTab.getAttribute('data-tab') === 'templates') {
+        e.preventDefault();
+        btnNewTemplate.click();
+      }
+    }
+
+    // Save Template: Ctrl + S or Cmd + S (when on templates tab)
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+      const activeTab = document.querySelector('.nav-tab.active');
+      if (activeTab && activeTab.getAttribute('data-tab') === 'templates') {
+        e.preventDefault();
+        btnSaveTemplate.click();
+      }
+    }
+  });
 }
 
 // ==========================================
@@ -586,11 +674,12 @@ async function toggleConnection() {
   console.log(`%c[UI Action] Connection toggle clicked. ConnectedState: ${isConnected}, QRState: ${isQRReady}`, 'color: #3b82f6; font-weight: bold;');
 
   if (isConnected || isQRReady) {
+    const confirmTitle = isConnected ? 'Disconnect WhatsApp' : 'Cancel Connection';
     const confirmMsg = isConnected 
-      ? 'Are you sure you want to disconnect from WhatsApp?' 
+      ? 'Are you sure you want to disconnect from WhatsApp? Active campaign transmissions will pause.' 
       : 'Are you sure you want to cancel the connection process?';
       
-    if (confirm(confirmMsg)) {
+    if (await showConfirmModal(confirmTitle, confirmMsg, isConnected ? 'Disconnect' : 'Cancel Link')) {
       state.isTransitioning = true;
       btnToggleConnection.disabled = true;
       btnToggleConnection.textContent = 'Disconnecting...';
@@ -628,7 +717,11 @@ async function toggleConnection() {
 }
 
 async function forceResetConnection() {
-  if (!confirm('Are you sure you want to perform a Force Reset?\n\nThis will stop the active browser, delete cached file locks, and request a fresh QR code.')) {
+  if (!(await showConfirmModal(
+    'Force Reset Connection',
+    'Are you sure you want to perform a Force Reset?\n\nThis will stop the active browser, delete cached file locks, and request a fresh QR code.',
+    'Force Reset'
+  ))) {
     return;
   }
 
@@ -1059,7 +1152,13 @@ async function saveTemplate() {
 
 async function deleteTemplate() {
   if (!state.selectedTemplateId) return;
-  if (!confirm('Are you sure you want to delete this template?')) return;
+  if (!(await showConfirmModal(
+    'Delete Template',
+    'Are you sure you want to delete this template? This action cannot be undone.',
+    'Delete'
+  ))) {
+    return;
+  }
 
   console.log(`%c[UI Action] Delete Template clicked. ID: ${state.selectedTemplateId}`, 'color: #ef4444; font-weight: bold;');
 
@@ -1486,7 +1585,17 @@ function updateCampaignProgress(data) {
 
 function renderLogs(leads) {
   if (leads.length === 0) {
-    logsTbody.innerHTML = `<tr><td colspan="5" class="no-logs">No log data.</td></tr>`;
+    logsTbody.innerHTML = `
+      <tr>
+        <td colspan="5" class="no-logs">
+          <div class="empty-state">
+            <div class="empty-state-icon">📤</div>
+            <div class="empty-state-title">No Transmission Logs</div>
+            <div class="empty-state-desc">Active campaign messages will appear here in real-time once sending begins.</div>
+          </div>
+        </td>
+      </tr>
+    `;
     return;
   }
 
@@ -1530,7 +1639,11 @@ function renderLogs(leads) {
 }
 
 async function cancelCampaign() {
-  if (!confirm('Are you sure you want to cancel the campaign?')) return;
+  if (!(await showConfirmModal(
+    'Cancel Campaign',
+    'Are you sure you want to cancel the active campaign? Messages currently queued will not be sent.',
+    'Cancel Campaign'
+  ))) return;
   
   console.log('%c[UI Action] Cancel Campaign clicked.', 'color: #ef4444; font-weight: bold;');
 
@@ -1571,7 +1684,11 @@ async function loadCampaignHistory() {
       historyTbody.innerHTML = `
         <tr>
           <td colspan="6" class="no-history">
-            No past campaigns available.
+            <div class="empty-state">
+              <div class="empty-state-icon">📜</div>
+              <div class="empty-state-title">No Campaign History</div>
+              <div class="empty-state-desc">You haven't run any campaigns yet. Send your first campaign to view history and download reports.</div>
+            </div>
           </td>
         </tr>
       `;

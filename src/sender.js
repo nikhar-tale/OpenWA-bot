@@ -1,4 +1,4 @@
-const { getSessionStatus, sendTextMessage } = require('./wa-client');
+const { getSessionStatus, sendTextMessage, sendMediaMessage } = require('./wa-client');
 const { saveBatch, getBatch } = require('./db');
 
 let activeSendingState = {
@@ -121,8 +121,68 @@ async function processQueue(batchId, templateContent, delaySeconds) {
     const customizedText = personalizeMessage(templateContent, lead.name);
     console.log(`\x1b[35m[Campaign Queue]\x1b[0m Compiled template: recipient = "${lead.name}", length = ${customizedText.length} chars.`);
 
-    // Send the message
-    const sendResult = await sendTextMessage(lead.phone, customizedText);
+    // Send the message (text or media)
+    let sendResult;
+    if (!batch.messageType || batch.messageType === 'text') {
+      sendResult = await sendTextMessage(lead.phone, customizedText);
+    } else {
+      try {
+        let mediaFiles = batch.mediaFiles || [];
+        if (mediaFiles.length === 0 && batch.mediaPath) {
+          mediaFiles = [{
+            path: batch.mediaPath,
+            mimetype: batch.mediaMimetype,
+            filename: batch.mediaFilename
+          }];
+        }
+
+        if (mediaFiles.length === 0) {
+          throw new Error('Media files are missing.');
+        }
+
+        const fs = require('fs').promises;
+        let fileIndex = 0;
+        let success = true;
+        let lastResult = null;
+
+        for (const file of mediaFiles) {
+          if (fileIndex > 0) {
+            // Safety pause between files
+            await new Promise(resolve => setTimeout(resolve, 800));
+          }
+
+          if (activeSendingState.cancelRequested) {
+            throw new Error('Campaign cancelled during media transfer.');
+          }
+
+          const fileBuffer = await fs.readFile(file.path);
+          const base64Data = fileBuffer.toString('base64');
+          const caption = fileIndex === 0 ? customizedText : '';
+
+          const result = await sendMediaMessage(
+            lead.phone,
+            batch.messageType,
+            base64Data,
+            file.mimetype,
+            file.filename,
+            caption
+          );
+
+          lastResult = result;
+          if (!result.success) {
+            success = false;
+            break;
+          }
+          fileIndex++;
+        }
+        sendResult = success ? { success: true, messageId: lastResult?.messageId } : lastResult;
+      } catch (err) {
+        sendResult = {
+          success: false,
+          error: `Failed to read/send media: ${err.message}`
+        };
+      }
+    }
 
     // Update lead status
     if (sendResult.success) {

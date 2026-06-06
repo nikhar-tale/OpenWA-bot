@@ -74,6 +74,43 @@ test('WhatsApp Gateway Client Tests', async (t) => {
     mockAxiosInstance.post.mock.restore();
   });
 
+  await t.test('sendMediaMessage sends media correctly', async () => {
+    test.mock.method(mockAxiosInstance, 'get', async (url) => {
+      if (url === '/sessions') {
+        return { data: [{ id: 'mock-uuid', name: 'leads-bot-session' }] };
+      }
+    });
+
+    let postedUrl = '';
+    let postedBody = null;
+    test.mock.method(mockAxiosInstance, 'post', async (url, body) => {
+      if (url.includes('/sessions/mock-uuid/messages/')) {
+        postedUrl = url;
+        postedBody = body;
+        return { data: { id: 'media-msg-123' } };
+      }
+    });
+
+    const res = await waClient.sendMediaMessage('918888888888', 'image', 'base64code', 'image/jpeg', 'test.jpg', 'My Caption');
+    assert.strictEqual(res.success, true);
+    assert.strictEqual(res.messageId, 'media-msg-123');
+    assert.ok(postedUrl.endsWith('/send-image'));
+    assert.strictEqual(postedBody.chatId, '918888888888@c.us');
+    assert.strictEqual(postedBody.base64, 'base64code');
+    assert.strictEqual(postedBody.mimetype, 'image/jpeg');
+    assert.strictEqual(postedBody.filename, 'test.jpg');
+    assert.strictEqual(postedBody.caption, 'My Caption');
+
+    // Test audio (should not include caption)
+    const audioRes = await waClient.sendMediaMessage('918888888888', 'audio', 'base64audio', 'audio/mp3', 'test.mp3', 'Ignored Caption');
+    assert.strictEqual(audioRes.success, true);
+    assert.ok(postedUrl.endsWith('/send-audio'));
+    assert.strictEqual(postedBody.caption, undefined);
+
+    mockAxiosInstance.get.mock.restore();
+    mockAxiosInstance.post.mock.restore();
+  });
+
   await t.test('getSessionStatus returns SCAN_QR and other statuses', async () => {
     test.mock.method(mockAxiosInstance, 'get', async (url) => {
       if (url === '/sessions') {

@@ -196,6 +196,51 @@ async function sendTextMessage(phone, text) {
 }
 
 /**
+ * Sends a media message to a specific number.
+ */
+async function sendMediaMessage(phone, type, base64, mimetype, filename, caption) {
+  try {
+    const client = await getHttpClient();
+    const uuid = await getSessionUuid();
+
+    let chatId = phone.trim();
+    if (!chatId.endsWith('@c.us')) {
+      const cleanNumber = chatId.replace(/[^\d]/g, '');
+      chatId = `${cleanNumber}@c.us`;
+    }
+
+    let endpoint = 'send-document';
+    if (type === 'image') endpoint = 'send-image';
+    else if (type === 'video') endpoint = 'send-video';
+    else if (type === 'audio') endpoint = 'send-audio';
+
+    console.log(`\x1b[34m[Gateway Req]\x1b[0m Sending media (${type}) to ${chatId}...`);
+    const payload = {
+      chatId: chatId,
+      base64: base64,
+      mimetype: mimetype,
+      filename: filename
+    };
+    if (caption && type !== 'audio') {
+      payload.caption = caption;
+    }
+
+    const res = await client.post(`/sessions/${uuid}/messages/${endpoint}`, payload);
+    console.log(`\x1b[35m[Gateway Res]\x1b[0m Media message sent successfully. ID: ${res.data.id || res.data.messageId}`);
+    return { success: true, messageId: res.data.id || res.data.messageId };
+  } catch (error) {
+    if (error.response && error.response.status === 404) {
+      cachedSessionUuid = null;
+    }
+    console.error(`\x1b[31m[Gateway Err]\x1b[0m Failed to send media message (${type}) to ${phone}:`, error.message);
+    return { 
+      success: false, 
+      error: error.response?.data?.message || error.message 
+    };
+  }
+}
+
+/**
  * Halts, cleans the cache, and restarts the session to recover from hangs.
  */
 async function resetSession() {
@@ -254,5 +299,6 @@ module.exports = {
   stopSession,
   getSessionQR,
   sendTextMessage,
+  sendMediaMessage,
   resetSession
 };

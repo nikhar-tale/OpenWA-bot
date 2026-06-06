@@ -3,6 +3,7 @@ const cors = require('cors');
 const multer = require('multer');
 const path = require('path');
 const crypto = require('crypto');
+const fs = require('fs');
 
 const db = require('./db');
 const { parseLeadsBuffer } = require('./excel-parser');
@@ -80,11 +81,42 @@ const basicAuthMiddleware = (req, res, next) => {
 app.use(basicAuthMiddleware);
 
 app.use(express.static(path.join(__dirname, '..', 'public')));
+app.use('/uploads', express.static(path.join(__dirname, '..', 'data', 'uploads')));
 
 // Setup Multer for memory upload with a strict 5MB limit
 const upload = multer({ 
   storage: multer.memoryStorage(),
   limits: { fileSize: 5 * 1024 * 1024 } // 5MB limit
+});
+
+// Setup Multer for media uploads with a strict 20MB limit and saved to data/uploads
+const uploadDir = path.join(__dirname, '..', 'data', 'uploads');
+if (!fs.existsSync(uploadDir)) {
+  fs.mkdirSync(uploadDir, { recursive: true });
+}
+
+const mediaStorage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    cb(null, uploadDir);
+  },
+  filename: function (req, file, cb) {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    const ext = path.extname(file.originalname);
+    cb(null, file.fieldname + '-' + uniqueSuffix + ext);
+  }
+});
+
+const mediaUpload = multer({
+  storage: mediaStorage,
+  limits: { fileSize: 20 * 1024 * 1024 }, // 20MB limit
+  fileFilter: function (req, file, cb) {
+    const allowedExtensions = ['.jpg', '.jpeg', '.png', '.pdf', '.mp4', '.mp3'];
+    const ext = path.extname(file.originalname).toLowerCase();
+    if (!allowedExtensions.includes(ext)) {
+      return cb(new Error('Only .jpg, .jpeg, .png, .pdf, .mp4, and .mp3 files are allowed.'));
+    }
+    cb(null, true);
+  }
 });
 
 // ==========================================
@@ -148,10 +180,14 @@ app.post('/api/session/reset', async (req, res) => {
 
 app.post('/api/session/send-test', async (req, res) => {
   try {
-    const { numbers, message } = req.body;
+    const { numbers, message, messageType, mediaPath, mediaMimetype, mediaFilename } = req.body;
+    let mediaFiles = req.body.mediaFiles || [];
     
-    if (!numbers || !message) {
-      return res.status(400).json({ error: 'Numbers and message are required.' });
+    if (!numbers) {
+      return res.status(400).json({ error: 'Numbers are required.' });
+    }
+    if ((!messageType || messageType === 'text') && !message) {
+      return res.status(400).json({ error: 'Message content is required.' });
     }
 
     const status = await waClient.getSessionStatus();
@@ -167,11 +203,58 @@ app.post('/api/session/send-test', async (req, res) => {
       return res.status(400).json({ error: 'No valid numbers provided.' });
     }
 
-    console.log(`\x1b[35m[Server API]\x1b[0m Sending test message to: ${numberList.join(', ')}`);
+    if (messageType && messageType !== 'text' && mediaFiles.length === 0 && mediaPath) {
+      mediaFiles = [{
+        path: mediaPath,
+        mimetype: mediaMimetype,
+        filename: mediaFilename
+      }];
+    }
+
+    if (messageType && messageType !== 'text' && mediaFiles.length === 0) {
+      return res.status(400).json({ error: 'Media files are missing for test.' });
+    }
+
+    console.log(`\x1b[35m[Server API]\x1b[0m Sending test (${messageType}) with ${mediaFiles.length} files to: ${numberList.join(', ')}`);
     const results = [];
+    const fsPromises = require('fs').promises;
+
     for (const num of numberList) {
-      const sendResult = await waClient.sendTextMessage(num, message);
-      results.push({ phone: num, ...sendResult });
+      if (!messageType || messageType === 'text') {
+        const sendResult = await waClient.sendTextMessage(num, message);
+        results.push({ phone: num, ...sendResult });
+      } else {
+        let fileIndex = 0;
+        let success = true;
+        let lastResult = null;
+        for (const file of mediaFiles) {
+          if (fileIndex > 0) {
+            await new Promise(resolve => setTimeout(resolve, 800));
+          }
+          try {
+            const fileBuffer = await fsPromises.readFile(file.path);
+            const base64Data = fileBuffer.toString('base64');
+            const caption = fileIndex === 0 ? message : '';
+            const sendResult = await waClient.sendMediaMessage(
+              num,
+              messageType,
+              base64Data,
+              file.mimetype,
+              file.filename,
+              caption
+            );
+            lastResult = sendResult;
+            if (!sendResult.success) {
+              success = false;
+            }
+          } catch (err) {
+            success = false;
+            lastResult = { success: false, error: err.message };
+          }
+          fileIndex++;
+        }
+        results.push({ phone: num, success, ...lastResult });
+      }
     }
 
     res.json({ success: true, results });
@@ -239,15 +322,33 @@ app.get('/api/templates', async (req, res) => {
 
 app.post('/api/templates', async (req, res) => {
   try {
-    const { id, name, content } = req.body;
-    console.log(`\x1b[35m[Server API]\x1b[0m Saving template: ID = ${id || 'NEW'}, Name = "${name}"`);
+    const { id, name, content, messageType, mediaPath, mediaMimetype, mediaFilename } = req.body;
+    let mediaFiles = req.body.mediaFiles || [];
+    console.log(`\x1b[35m[Server API]\x1b[0m Saving template: ID = ${id || 'NEW'}, Name = "${name}", Type = ${messageType || 'text'}`);
     if (!name || !content) {
       console.log('\x1b[31m[Server API]\x1b[0m Save template failed: Missing Name or Content.');
       return res.status(400).json({ error: 'Name and Content are required.' });
     }
 
+    if (messageType && messageType !== 'text' && mediaFiles.length === 0 && mediaPath) {
+      mediaFiles = [{
+        path: mediaPath,
+        mimetype: mediaMimetype,
+        filename: mediaFilename
+      }];
+    }
+
     const templateId = id || `tpl_${crypto.randomUUID()}`;
-    const template = { id: templateId, name, content };
+    const template = { 
+      id: templateId, 
+      name, 
+      content,
+      messageType: messageType || 'text',
+      mediaPath: mediaFiles[0]?.path || null,
+      mediaMimetype: mediaFiles[0]?.mimetype || null,
+      mediaFilename: mediaFiles[0]?.filename || null,
+      mediaFiles: mediaFiles
+    };
     await db.saveTemplate(template);
     console.log(`\x1b[32m[Server API]\x1b[0m Template "${name}" (${templateId}) saved successfully.`);
     res.json(template);
@@ -300,9 +401,61 @@ app.post('/api/bulk/upload', upload.single('file'), (req, res) => {
   }
 });
 
+app.post('/api/upload-media', (req, res) => {
+  mediaUpload.array('media', 10)(req, res, (err) => {
+    if (err) {
+      if (err.code === 'LIMIT_FILE_SIZE') {
+        return res.status(413).json({ error: 'One or more files exceed the 20MB limit.' });
+      }
+      return res.status(400).json({ error: err.message });
+    }
+    
+    const files = req.files || (req.file ? [req.file] : []);
+    if (files.length === 0) {
+      return res.status(400).json({ error: 'No media files provided.' });
+    }
+
+    // Check combined size limit (50MB)
+    const combinedSize = files.reduce((sum, file) => sum + file.size, 0);
+    const MAX_COMBINED_SIZE = 50 * 1024 * 1024; // 50MB
+    if (combinedSize > MAX_COMBINED_SIZE) {
+      // Clean up files
+      files.forEach(file => {
+        try {
+          if (fs.existsSync(file.path)) {
+            fs.unlinkSync(file.path);
+          }
+        } catch (e) {
+          console.error('[Upload Cleanup Error]', e.message);
+        }
+      });
+      return res.status(413).json({ error: 'Combined file size exceeds the 50MB limit.' });
+    }
+
+    const filesData = files.map(file => ({
+      filename: file.originalname,
+      mimetype: file.mimetype,
+      path: file.path,
+      size: file.size,
+      url: '/uploads/' + file.filename
+    }));
+
+    res.json({
+      success: true,
+      filename: filesData[0].filename,
+      mimetype: filesData[0].mimetype,
+      path: filesData[0].path,
+      size: filesData[0].size,
+      url: filesData[0].url,
+      files: filesData
+    });
+  });
+});
+
 app.post('/api/bulk/send', async (req, res) => {
-  const { templateId, leads, delaySeconds } = req.body;
-  console.log(`\x1b[35m[Server API]\x1b[0m Received start-campaign request. Template ID: ${templateId}, Leads: ${leads?.length || 0}, Delay: ${delaySeconds}s`);
+  const { templateId, leads, delaySeconds, messageType, mediaPath, mediaMimetype, mediaFilename } = req.body;
+  let mediaFiles = req.body.mediaFiles || [];
+  console.log(`\x1b[35m[Server API]\x1b[0m Received start-campaign request. Template ID: ${templateId}, Leads: ${leads?.length || 0}, Delay: ${delaySeconds}s, Type: ${messageType || 'text'}`);
 
   if (!templateId || !leads || !Array.isArray(leads) || leads.length === 0) {
     console.log('\x1b[31m[Server API]\x1b[0m Campaign failed to start: Missing templateId or empty leads array.');
@@ -318,6 +471,14 @@ app.post('/api/bulk/send', async (req, res) => {
     if (!template) {
       console.log(`\x1b[31m[Server API]\x1b[0m Campaign failed to start: Template ${templateId} not found in database.`);
       return res.status(404).json({ error: 'Template not found.' });
+    }
+
+    if (messageType && messageType !== 'text' && mediaFiles.length === 0 && mediaPath) {
+      mediaFiles = [{
+        path: mediaPath,
+        mimetype: mediaMimetype,
+        filename: mediaFilename
+      }];
     }
 
     // Create new sending batch
@@ -337,7 +498,12 @@ app.post('/api/bulk/send', async (req, res) => {
         status: 'PENDING',
         error: null,
         timestamp: null
-      }))
+      })),
+      messageType: messageType || 'text',
+      mediaPath: mediaFiles[0]?.path || null,
+      mediaMimetype: mediaFiles[0]?.mimetype || null,
+      mediaFilename: mediaFiles[0]?.filename || null,
+      mediaFiles: mediaFiles
     };
 
     console.log(`\x1b[35m[Server API]\x1b[0m Creating campaign batch in SQLite: ID = ${batchId}, Template Name = "${template.name}"`);

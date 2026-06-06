@@ -211,7 +211,13 @@
             </thead>
             <tbody id="logs-tbody">
               <tr>
-                <td colspan="5" class="no-logs">No campaign running. Ready to upload and send.</td>
+                <td colspan="5" class="no-logs">
+                  <div class="empty-state">
+                    <div class="empty-state-icon">📤</div>
+                    <div class="empty-state-title">No Active Campaign</div>
+                    <div class="empty-state-desc">Upload a leads spreadsheet and start a campaign to see live transmission logs.</div>
+                  </div>
+                </td>
               </tr>
             </tbody>
           </table>
@@ -309,7 +315,13 @@
             </thead>
             <tbody id="history-tbody">
               <tr>
-                <td colspan="6" class="no-history" style="text-align: center; color: var(--text-muted); padding: 24px;">No past campaigns available.</td>
+                <td colspan="6" class="no-history">
+                  <div class="empty-state">
+                    <div class="empty-state-icon">📜</div>
+                    <div class="empty-state-title">No Campaign History</div>
+                    <div class="empty-state-desc">You haven't run any campaigns yet. Send your first campaign to view history and download reports.</div>
+                  </div>
+                </td>
               </tr>
             </tbody>
           </table>
