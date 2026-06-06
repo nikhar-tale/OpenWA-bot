@@ -146,6 +146,41 @@ app.post('/api/session/reset', async (req, res) => {
   }
 });
 
+app.post('/api/session/send-test', async (req, res) => {
+  try {
+    const { numbers, message } = req.body;
+    
+    if (!numbers || !message) {
+      return res.status(400).json({ error: 'Numbers and message are required.' });
+    }
+
+    const status = await waClient.getSessionStatus();
+    if (status.status !== 'CONNECTED' && status.status !== 'ready') {
+      return res.status(400).json({ error: 'WhatsApp is not connected.' });
+    }
+
+    const numberList = numbers.split(',')
+      .map(num => num.trim())
+      .filter(num => num.length > 0);
+
+    if (numberList.length === 0) {
+      return res.status(400).json({ error: 'No valid numbers provided.' });
+    }
+
+    console.log(`\x1b[35m[Server API]\x1b[0m Sending test message to: ${numberList.join(', ')}`);
+    const results = [];
+    for (const num of numberList) {
+      const sendResult = await waClient.sendTextMessage(num, message);
+      results.push({ phone: num, ...sendResult });
+    }
+
+    res.json({ success: true, results });
+  } catch (error) {
+    console.error('[Server API Err] Error sending test message:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // ==========================================
 // GATEWAY SETTINGS ENDPOINTS
 // ==========================================

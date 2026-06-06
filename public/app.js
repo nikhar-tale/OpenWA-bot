@@ -76,6 +76,12 @@ const settingsHfToken = document.getElementById('settings-hf-token');
 const btnSaveSettings = document.getElementById('btn-save-settings');
 const settingsMsg = document.getElementById('settings-msg');
 
+// Test Sender Elements
+const testNumbersInput = document.getElementById('test-numbers');
+const testMessageInput = document.getElementById('test-message');
+const btnSendTest = document.getElementById('btn-send-test');
+const testStatusMsg = document.getElementById('test-status-msg');
+
 const templateSelect = document.getElementById('template-select');
 const btnNewTemplate = document.getElementById('btn-new-template');
 const templateName = document.getElementById('template-name');
@@ -163,6 +169,12 @@ function setupEventListeners() {
   btnSaveSettings.addEventListener('click', () => {
     console.log('%c[UI Event] Button Tap: Save Settings Clicked', 'color: #eab308; font-weight: bold; background: #422006; padding: 2px 6px; border-radius: 3px;');
     saveSettings();
+  });
+
+  // Test Sender
+  btnSendTest.addEventListener('click', () => {
+    console.log('%c[UI Event] Button Tap: Send Test Message Clicked', 'color: #3b82f6; font-weight: bold; background: #172554; padding: 2px 6px; border-radius: 3px;');
+    sendTestMessage();
   });
 
   // Templates
@@ -521,6 +533,60 @@ async function saveSettings() {
     btnSaveSettings.disabled = false;
     btnSaveSettings.textContent = 'Save Settings';
     checkWAStatus();
+  }
+}
+
+async function sendTestMessage() {
+  const numbers = testNumbersInput.value.trim();
+  const message = testMessageInput.value.trim();
+
+  if (!numbers || !message) {
+    showToast('Please enter both phone numbers and a message.', 'error');
+    return;
+  }
+
+  if (state.waStatus !== 'CONNECTED' && state.waStatus !== 'ready') {
+    showToast('WhatsApp is not connected. Please connect first.', 'error');
+    return;
+  }
+
+  try {
+    btnSendTest.disabled = true;
+    btnSendTest.textContent = 'Sending...';
+    testStatusMsg.className = 'hidden';
+
+    const res = await fetch(`${API_BASE}/session/send-test`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ numbers, message })
+    });
+
+    const data = await res.json();
+
+    if (!res.ok) {
+      throw new Error(data.error || 'Failed to send test message.');
+    }
+
+    const successCount = data.results.filter(r => r.success).length;
+    const failCount = data.results.filter(r => !r.success).length;
+
+    if (failCount === 0) {
+      testStatusMsg.className = 'test-status-success';
+      testStatusMsg.textContent = `✅ Successfully sent test message to all ${successCount} numbers!`;
+      showToast('Test message sent successfully!', 'success');
+    } else {
+      testStatusMsg.className = 'test-status-error';
+      testStatusMsg.textContent = `❌ Sent successfully to ${successCount} numbers, but failed for ${failCount} numbers.`;
+      showToast('Some test messages failed to send.', 'error');
+    }
+  } catch (error) {
+    console.error('Error sending test message:', error);
+    testStatusMsg.className = 'test-status-error';
+    testStatusMsg.textContent = `❌ Error: ${error.message}`;
+    showToast(error.message, 'error');
+  } finally {
+    btnSendTest.disabled = false;
+    btnSendTest.textContent = '⚡ Send Test Message';
   }
 }
 

@@ -830,3 +830,16 @@ body {
     opacity: 1;
   }
 }
+
+/* Quick Test Sender Status Alerts */
+.test-status-success {
+  background-color: var(--success-bg);
+  color: var(--success);
+  border: 1px solid rgba(16, 185, 129, 0.2);
+}
+
+.test-status-error {
+  background-color: var(--danger-bg);
+  color: var(--danger);
+  border: 1px solid rgba(239, 68, 68, 0.2);
+}
