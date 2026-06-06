@@ -179,10 +179,15 @@ function setupEventListeners() {
   const tabs = document.querySelectorAll('.nav-tab');
   tabs.forEach(tab => {
     tab.addEventListener('click', () => {
-      document.querySelector('.nav-tab.active').classList.remove('active');
+      const activeTab = document.querySelector('.nav-tab.active');
+      if (activeTab) {
+        activeTab.classList.remove('active');
+        activeTab.setAttribute('aria-selected', 'false');
+      }
       document.querySelectorAll('.tab-content').forEach(c => c.classList.add('hidden'));
       
       tab.classList.add('active');
+      tab.setAttribute('aria-selected', 'true');
       const targetTab = tab.getAttribute('data-tab');
       document.getElementById(`tab-${targetTab}`).classList.remove('hidden');
 

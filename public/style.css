@@ -129,7 +129,10 @@ body {
   border: 1px solid var(--border-color);
   border-radius: var(--radius-xl);
   padding: 24px;
-  box-shadow: 0 4px 30px rgba(0, 0, 0, 0.2);
+  box-shadow: 
+    0 1px 2px rgba(0, 0, 0, 0.05),
+    0 4px 12px rgba(0, 0, 0, 0.05),
+    0 16px 32px rgba(0, 0, 0, 0.1);
   transition: transform 0.2s, box-shadow 0.2s;
 }
 
@@ -163,21 +166,25 @@ body {
   font-size: 12px;
   font-weight: 600;
   text-transform: uppercase;
+  border: 1px solid transparent;
 }
 
 .badge-connected {
   background-color: var(--success-bg);
   color: var(--success);
+  border-color: rgba(16, 185, 129, 0.2);
 }
 
 .badge-disconnected {
   background-color: var(--danger-bg);
   color: var(--danger);
+  border-color: rgba(239, 68, 68, 0.2);
 }
 
 .badge-warning {
   background-color: var(--warning-bg);
   color: var(--warning);
+  border-color: rgba(245, 158, 11, 0.2);
 }
 
 /* QR Code Section */
@@ -264,14 +271,30 @@ body {
   border-radius: var(--radius-md);
   font-family: inherit;
   font-size: 14px;
-  transition: border-color 0.2s, box-shadow 0.2s;
+  transition: border-color 0.2s, box-shadow 0.2s, background-color 0.2s;
   width: 100%;
+}
+
+.form-control:hover {
+  border-color: rgba(255, 255, 255, 0.16);
+  background: rgba(15, 23, 42, 0.8);
 }
 
 .form-control:focus {
   outline: none;
   border-color: var(--primary);
-  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2);
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2);
+  background: rgba(15, 23, 42, 0.9);
+}
+
+/* Focus visible indicators for accessibility */
+.btn:focus-visible,
+.form-control:focus-visible,
+.nav-tab:focus-visible,
+.upload-zone:focus-visible,
+.template-selector-wrapper select:focus-visible {
+  outline: 2px solid var(--primary) !important;
+  outline-offset: 2px !important;
 }
 
 .variable-tip {
@@ -467,6 +490,12 @@ body {
 .logs-table td, .history-table td {
   padding: 10px 12px;
   border-bottom: 1px solid var(--border-color);
+  transition: background-color 0.15s ease;
+}
+
+.logs-table tbody tr:hover td,
+.history-table tbody tr:hover td {
+  background: rgba(255, 255, 255, 0.02);
 }
 
 .logs-table tr:last-child td, .history-table tr:last-child td {
@@ -491,11 +520,11 @@ body {
   border-radius: var(--radius-md);
   border: none;
   cursor: pointer;
-  transition: background-color 0.2s, opacity 0.2s;
+  transition: background-color 0.2s, opacity 0.2s, transform 0.1s ease;
 }
 
 .btn:active {
-  opacity: 0.9;
+  transform: scale(0.98);
 }
 
 .btn:disabled {
@@ -539,18 +568,19 @@ body {
 }
 
 .btn-success:hover {
-  opacity: 0.9;
+  background-color: #059669;
 }
 
 .btn-danger {
   background-color: var(--danger-bg);
-  color: var(--danger);
-  border: 1px solid rgba(239, 68, 68, 0.2);
+  color: #f87171; /* Brighter red for WCAG contrast ratio > 4.5:1 on dark app background */
+  border: 1px solid rgba(239, 68, 68, 0.3);
 }
 
 .btn-danger:hover {
   background-color: var(--danger);
   color: white;
+  border-color: var(--danger);
 }
 
 .w-100 {

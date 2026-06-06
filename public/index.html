@@ -26,15 +26,15 @@
     </header>
 
     <!-- Tab Navigation -->
-    <nav class="tab-navigation">
-      <button class="nav-tab active" data-tab="dispatcher"><span aria-hidden="true">🚀</span> Dispatcher</button>
-      <button class="nav-tab" data-tab="templates"><span aria-hidden="true">📚</span> Templates</button>
-      <button class="nav-tab" data-tab="history"><span aria-hidden="true">📜</span> Campaign History</button>
-      <button class="nav-tab" data-tab="settings"><span aria-hidden="true">⚙️</span> Settings</button>
+    <nav class="tab-navigation" role="tablist" aria-label="Dashboard Navigation">
+      <button class="nav-tab active" data-tab="dispatcher" role="tab" aria-selected="true" aria-controls="tab-dispatcher" id="tab-btn-dispatcher"><span aria-hidden="true">🚀</span> Dispatcher</button>
+      <button class="nav-tab" data-tab="templates" role="tab" aria-selected="false" aria-controls="tab-templates" id="tab-btn-templates"><span aria-hidden="true">📚</span> Templates</button>
+      <button class="nav-tab" data-tab="history" role="tab" aria-selected="false" aria-controls="tab-history" id="tab-btn-history"><span aria-hidden="true">📜</span> Campaign History</button>
+      <button class="nav-tab" data-tab="settings" role="tab" aria-selected="false" aria-controls="tab-settings" id="tab-btn-settings"><span aria-hidden="true">⚙️</span> Settings</button>
     </nav>
 
     <!-- Tab Panel: Dispatcher -->
-    <div id="tab-dispatcher" class="tab-content">
+    <div id="tab-dispatcher" class="tab-content" role="tabpanel" aria-labelledby="tab-btn-dispatcher">
       <div class="dashboard-grid">
         <!-- Left: Upload -->
         <div class="column-left-dispatcher">
@@ -220,7 +220,7 @@
     </div>
 
     <!-- Tab Panel: Templates -->
-    <div id="tab-templates" class="tab-content hidden">
+    <div id="tab-templates" class="tab-content hidden" role="tabpanel" aria-labelledby="tab-btn-templates">
       <div class="card card-templates">
         <div class="card-header-actions">
           <h2>Message Templates Manager</h2>
@@ -285,7 +285,7 @@
     </div>
 
     <!-- Tab Panel: History -->
-    <div id="tab-history" class="tab-content hidden">
+    <div id="tab-history" class="tab-content hidden" role="tabpanel" aria-labelledby="tab-btn-history">
       <div class="card card-history">
         <h2>Campaign History & Reports</h2>
         <p class="card-desc">Review previous bulk campaigns and export detailed CSV reports for property rental analysis.</p>
@@ -312,7 +312,7 @@
     </div>
 
     <!-- Tab Panel: Settings -->
-    <div id="tab-settings" class="tab-content hidden">
+    <div id="tab-settings" class="tab-content hidden" role="tabpanel" aria-labelledby="tab-btn-settings">
       <div class="settings-grid">
         <!-- WhatsApp Connection -->
         <div class="card card-connection">
