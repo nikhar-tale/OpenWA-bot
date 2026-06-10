@@ -5,6 +5,28 @@ const SESSION_NAME = process.env.SESSION_ID || 'leads-bot-session';
 
 let cachedSessionUuid = null;
 
+/**
+ * Extracts a human-readable error message from an axios error.
+ * Handles ECONNREFUSED, ETIMEDOUT, HTTP errors, and generic errors.
+ */
+function getErrorMessage(error) {
+  if (error.code === 'ECONNREFUSED') {
+    return `Gateway unreachable — cannot connect to ${error.config?.baseURL || 'OpenWA Gateway'}. Is the server running?`;
+  }
+  if (error.code === 'ECONNABORTED' || error.code === 'ETIMEDOUT') {
+    return `Gateway timeout — the OpenWA Gateway did not respond in time.`;
+  }
+  if (error.code === 'ENOTFOUND') {
+    return `Gateway hostname not found — check your Gateway URL in Settings.`;
+  }
+  if (error.response) {
+    const status = error.response.status;
+    const msg = error.response.data?.message || error.response.data?.error || error.response.statusText;
+    return `Gateway returned HTTP ${status}: ${msg}`;
+  }
+  return error.message || 'Unknown error communicating with the OpenWA Gateway.';
+}
+
 async function getHttpClient() {
   const settings = await db.getSettings();
   const baseURL = process.env.OPENWA_URL || settings.openwa_url || 'http://localhost:2785/api';
@@ -65,7 +87,9 @@ async function getSessionUuid() {
         console.error('\x1b[31m[Gateway Err]\x1b[0m Failed to list sessions after 409 Conflict:', innerErr.message);
       }
     }
-    console.error('\x1b[31m[Gateway Err]\x1b[0m Error resolving session UUID:', error.message);
+    const errMsg = getErrorMessage(error);
+    console.error('\x1b[31m[Gateway Err]\x1b[0m Error resolving session UUID:', errMsg);
+    error._userMessage = errMsg;
     throw error;
   }
 }
@@ -88,7 +112,7 @@ async function getSessionStatus() {
       console.log(`\x1b[33m[Gateway Log]\x1b[0m Stale session UUID (404). Clearing cache...`);
       cachedSessionUuid = null;
     }
-    return { status: 'UNKNOWN', phone: null, pushName: null, error: error.message };
+    return { status: 'UNKNOWN', phone: null, pushName: null, error: error._userMessage || getErrorMessage(error) };
   }
 }
 
@@ -113,7 +137,9 @@ async function startSession() {
       console.log(`\x1b[33m[Gateway Log]\x1b[0m Session already active (400)`);
       return { success: true, message: 'Session already active' };
     }
-    console.error('\x1b[31m[Gateway Err]\x1b[0m Error starting session:', error.message);
+    const errMsg = getErrorMessage(error);
+    console.error('\x1b[31m[Gateway Err]\x1b[0m Error starting session:', errMsg);
+    error._userMessage = errMsg;
     throw error;
   }
 }
@@ -128,12 +154,15 @@ async function stopSession() {
     console.log(`\x1b[34m[Gateway Req]\x1b[0m Stopping WhatsApp session (UUID: ${uuid})...`);
     const res = await client.post(`/sessions/${uuid}/stop`);
     console.log(`\x1b[35m[Gateway Res]\x1b[0m Stop completed:`, JSON.stringify(res.data));
+    cachedSessionUuid = null;  // Force fresh UUID lookup on next connect
     return res.data;
   } catch (error) {
     if (error.response && error.response.status === 404) {
       cachedSessionUuid = null;
     }
-    console.error('\x1b[31m[Gateway Err]\x1b[0m Error stopping session:', error.message);
+    const errMsg = getErrorMessage(error);
+    console.error('\x1b[31m[Gateway Err]\x1b[0m Error stopping session:', errMsg);
+    error._userMessage = errMsg;
     throw error;
   }
 }
@@ -172,7 +201,10 @@ async function sendTextMessage(phone, text) {
 
     let chatId = phone.trim();
     if (!chatId.endsWith('@c.us')) {
-      const cleanNumber = chatId.replace(/[^\d]/g, '');
+      let cleanNumber = chatId.replace(/[^\d]/g, '');
+      if (cleanNumber.length === 10) {
+        cleanNumber = `91${cleanNumber}`;
+      }
       chatId = `${cleanNumber}@c.us`;
     }
 
@@ -205,7 +237,10 @@ async function sendMediaMessage(phone, type, base64, mimetype, filename, caption
 
     let chatId = phone.trim();
     if (!chatId.endsWith('@c.us')) {
-      const cleanNumber = chatId.replace(/[^\d]/g, '');
+      let cleanNumber = chatId.replace(/[^\d]/g, '');
+      if (cleanNumber.length === 10) {
+        cleanNumber = `91${cleanNumber}`;
+      }
       chatId = `${cleanNumber}@c.us`;
     }
 
@@ -288,7 +323,9 @@ async function resetSession() {
     
     return { success: true, message: 'Reset initiated. Browser is restarting in the background.' };
   } catch (error) {
-    console.error('\x1b[31m[Gateway Err]\x1b[0m Error during session reset:', error.message);
+    const errMsg = getErrorMessage(error);
+    console.error('\x1b[31m[Gateway Err]\x1b[0m Error during session reset:', errMsg);
+    error._userMessage = errMsg;
     throw error;
   }
 }

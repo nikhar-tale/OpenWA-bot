@@ -42,6 +42,13 @@ test('Bulk Sender Queue Tests', async (t) => {
     try { fs.unlinkSync(TEST_DB_PATH); } catch (e) {}
   }
 
+  // Seed mock templates to test-sender-db.sqlite since default seeding is removed
+  await db.saveTemplate({
+    id: 'tpl_test_campaign',
+    name: 'Anshu & Nikhar Test Campaign',
+    content: 'Hello {{name}}'
+  });
+
   t.after(async () => {
     await db._close();
     if (fs.existsSync(TEST_DB_PATH)) {

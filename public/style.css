@@ -640,7 +640,7 @@ body {
   gap: 24px;
 }
 
-.column-left-dispatcher, .column-right-dispatcher {
+.column-left-dispatcher, .column-right-dispatcher, .column-left-templates {
   display: flex;
   flex-direction: column;
   gap: 24px;

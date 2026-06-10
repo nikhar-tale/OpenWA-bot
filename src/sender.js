@@ -1,5 +1,8 @@
 const { getSessionStatus, sendTextMessage, sendMediaMessage } = require('./wa-client');
-const { saveBatch, getBatch } = require('./db');
+const { saveBatch, getBatch, getTemplates } = require('./db');
+
+const PAUSE_AFTER_MESSAGES = 20;
+const PAUSE_DURATION_MINUTES = 8;
 
 let activeSendingState = {
   isSending: false,
@@ -79,8 +82,20 @@ async function startBulkSend(batchId, templateContent, delaySeconds) {
  * Worker loop that processes the queue sequentially.
  */
 async function processQueue(batchId, templateContent, delaySeconds) {
-  const delayMs = delaySeconds * 1000;
-  
+  let sessionSuccessCount = 0;
+
+  // Fetch ALL saved templates from the database for rotation
+  const allTemplates = await getTemplates();
+  if (!allTemplates || allTemplates.length === 0) {
+    const batch = await getBatch(batchId);
+    if (batch) {
+      batch.status = 'FAILED';
+      await saveBatch(batch);
+    }
+    console.log('\x1b[31m[Campaign Queue]\x1b[0m Failed: No templates found in database for rotation.');
+    return;
+  }
+
   while (true) {
     const batch = await getBatch(batchId);
     if (!batch) {
@@ -117,8 +132,13 @@ async function processQueue(batchId, templateContent, delaySeconds) {
       break;
     }
 
+    // Randomly pick one template from the list
+    const randomIdx = Math.floor(Math.random() * allTemplates.length);
+    const selectedTemplate = allTemplates[randomIdx];
+    console.log(`\x1b[36m[Campaign Queue]\x1b[0m Rotating template: selected index ${randomIdx} ("${selectedTemplate.name}") for lead ${lead.name}`);
+
     // Personalize message
-    const customizedText = personalizeMessage(templateContent, lead.name);
+    const customizedText = personalizeMessage(selectedTemplate.content, lead.name);
     console.log(`\x1b[35m[Campaign Queue]\x1b[0m Compiled template: recipient = "${lead.name}", length = ${customizedText.length} chars.`);
 
     // Send the message (text or media)
@@ -189,6 +209,7 @@ async function processQueue(batchId, templateContent, delaySeconds) {
       lead.status = 'SENT';
       lead.messageId = sendResult.messageId;
       batch.sentCount += 1;
+      sessionSuccessCount += 1;
       console.log(`\x1b[32m[Campaign Queue]\x1b[0m Dispatch Success for ${lead.name}. MsgID: ${lead.messageId}`);
     } else {
       lead.status = 'FAILED';
@@ -206,8 +227,18 @@ async function processQueue(batchId, templateContent, delaySeconds) {
     // If there are more leads, wait for the configured delay
     const hasMore = batch.leads.some(l => l.status === 'PENDING');
     if (hasMore) {
-      console.log(`\x1b[36m[Campaign Queue]\x1b[0m Enforcing anti-spam delay: waiting ${delaySeconds} seconds before next send...`);
-      await new Promise(resolve => setTimeout(resolve, delayMs));
+      if (sessionSuccessCount >= PAUSE_AFTER_MESSAGES) {
+        console.log(`\x1b[33m[Campaign Queue]\x1b[0m Reached ${PAUSE_AFTER_MESSAGES} successful messages. Taking an automatic break for ${PAUSE_DURATION_MINUTES} minutes...`);
+        await new Promise(resolve => setTimeout(resolve, PAUSE_DURATION_MINUTES * 60 * 1000));
+        console.log(`\x1b[33m[Campaign Queue]\x1b[0m Break over. Resuming campaign...`);
+        sessionSuccessCount = 0;
+      }
+
+      const minDelay = Math.max(delaySeconds, 20);
+      const maxDelay = Math.max(delaySeconds + 35, 55);
+      const actualDelaySeconds = Math.floor(Math.random() * (maxDelay - minDelay + 1)) + minDelay;
+      console.log(`\x1b[36m[Campaign Queue]\x1b[0m Enforcing anti-spam delay: waiting ${actualDelaySeconds} seconds (randomized) before next send...`);
+      await new Promise(resolve => setTimeout(resolve, actualDelaySeconds * 1000));
     }
   }
 }

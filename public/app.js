@@ -102,7 +102,16 @@ function showConfirmModal(title, message, confirmText = 'Confirm', cancelText = 
   });
 }
 
-// Intercept all outgoing fetch requests for detailed logging
+class APIError extends Error {
+  constructor(message, status, data) {
+    super(message);
+    this.name = 'APIError';
+    this.status = status;
+    this.data = data;
+  }
+}
+
+// Intercept all outgoing fetch requests for detailed logging & error handling
 const originalFetch = window.fetch;
 window.fetch = async function(...args) {
   const url = args[0];
@@ -114,6 +123,14 @@ window.fetch = async function(...args) {
   if (isPolling) {
     const res = await originalFetch(...args);
     console.log(`%c[UI Telemetry Poll] ${timestamp} - ${method} ${url} ➔ Status: ${res.status}`, 'color: #94a3b8; font-size: 11px;');
+    
+    // Check if HTTP response is successful (2xx) even for polling
+    if (!res.ok) {
+      let errData = {};
+      try { errData = await res.clone().json(); } catch (_) {}
+      const errMsg = errData.error || `Request failed with status ${res.status}`;
+      throw new APIError(errMsg, res.status, errData);
+    }
     return res;
   } else {
     console.log(`%c[UI API Req] ${timestamp} - OUTGOING ➔ ${method} ${url}`, 'color: #fb7185; font-weight: bold; background: #1e1b4b; padding: 2px 6px; border-radius: 3px;', {
@@ -128,6 +145,14 @@ window.fetch = async function(...args) {
       const res = await originalFetch(...args);
       const duration = (performance.now() - start).toFixed(1);
       
+      // Check if HTTP response is successful (2xx)
+      if (!res.ok) {
+        let errData = {};
+        try { errData = await res.clone().json(); } catch (_) {}
+        const errMsg = errData.error || `Request failed with status ${res.status}`;
+        throw new APIError(errMsg, res.status, errData);
+      }
+
       const resClone = res.clone();
       let responseBody = null;
       try {
@@ -146,17 +171,40 @@ window.fetch = async function(...args) {
   }
 };
 
+/**
+ * Safely fetches JSON from an endpoint and returns a fallback value if the request fails
+ */
+async function safeFetchJson(url, options = {}, fallback = []) {
+  try {
+    const res = await fetch(url, options);
+    const data = await res.json();
+    if (data && data.error && Array.isArray(fallback)) {
+      showToast(data.error, 'error');
+      return fallback;
+    }
+    return data;
+  } catch (err) {
+    console.error(`SafeFetch failed for ${url}:`, err);
+    showToast(err.message || 'Network error occurred.', 'error');
+    return fallback;
+  }
+}
+
 // State
 // State
 let state = {
   templates: [],
   selectedTemplateId: '',
   uploadedLeads: [],
+  tempUploadedLeads: null,
+  tempUploadedCount: 0,
   activeCampaign: null,
   waStatus: 'DISCONNECTED',
   pollingInterval: null,
   connectingTime: 0, // Track duration in initializing/authenticating state
   isTransitioning: false, // Prevent background polls from overwriting buttons during active transitions
+  targetStatus: null, // 'connecting' or 'disconnecting' to lock UI until status changes
+  transitionStart: 0, // Timestamp when transition started for timeout
   batches: [],
   messageType: 'text',
   mediaPath: null,
@@ -209,9 +257,26 @@ const templateContent = document.getElementById('template-content');
 const btnSaveTemplate = document.getElementById('btn-save-template');
 const btnDeleteTemplate = document.getElementById('btn-delete-template');
 
+// Template Import Elements
+const btnImportPicker = document.getElementById('btn-import-picker');
+const templateFileInput = document.getElementById('template-file-input');
+const templateImportConfirmWrapper = document.getElementById('template-import-confirm-wrapper');
+const templateImportFilename = document.getElementById('template-import-filename');
+const btnConfirmTemplateImport = document.getElementById('btn-confirm-template-import');
+const templateImportResult = document.getElementById('template-import-result');
+const templateImportResultSummary = document.getElementById('template-import-result-summary');
+const templateImportResultReasons = document.getElementById('template-import-result-reasons');
+const btnDownloadSampleTemplate = document.getElementById('btn-download-sample-template');
+const btnDownloadSampleLeads = document.getElementById('btn-download-sample-leads');
+
 const uploadZone = document.getElementById('upload-zone');
 const fileInput = document.getElementById('file-input');
 const fileInfoText = document.getElementById('file-info-text');
+
+// Leads Import Confirmation Elements
+const leadsImportConfirmWrapper = document.getElementById('leads-import-confirm-wrapper');
+const leadsImportCount = document.getElementById('leads-import-count');
+const btnConfirmLeadsImport = document.getElementById('btn-confirm-leads-import');
 
 const campaignReadySection = document.getElementById('campaign-ready');
 const campaignProgressSection = document.getElementById('campaign-progress');
@@ -389,6 +454,23 @@ function setupEventListeners() {
     updatePreview();
   });
 
+  // Template Import
+  btnImportPicker.addEventListener('click', () => {
+    templateFileInput.click();
+  });
+  templateFileInput.addEventListener('change', () => {
+    handleTemplateFileSelect();
+  });
+  btnConfirmTemplateImport.addEventListener('click', () => {
+    uploadTemplatesExcel();
+  });
+  btnDownloadSampleTemplate.addEventListener('click', () => {
+    downloadSampleExcel();
+  });
+  btnDownloadSampleLeads.addEventListener('click', () => {
+    downloadSampleLeads();
+  });
+
   // File Upload
   uploadZone.addEventListener('click', () => {
     console.log('%c[UI Event] Click: Upload Area Clicked', 'color: #06b6d4; font-weight: bold; background: #083344; padding: 2px 6px; border-radius: 3px;');
@@ -397,6 +479,9 @@ function setupEventListeners() {
   fileInput.addEventListener('change', () => {
     console.log('%c[UI Event] Input: File Chosen via File Browser', 'color: #06b6d4; font-weight: bold; background: #083344; padding: 2px 6px; border-radius: 3px;');
     handleFileSelect();
+  });
+  btnConfirmLeadsImport.addEventListener('click', () => {
+    confirmImportLeads();
   });
   
   // Drag and Drop
@@ -411,6 +496,13 @@ function setupEventListeners() {
     console.log('%c[UI Event] Button Tap: Cancel Campaign Clicked', 'color: #ef4444; font-weight: bold; background: #450a0a; padding: 2px 6px; border-radius: 3px;');
     cancelCampaign();
   });
+
+  const btnResumeCampaign = document.getElementById('btn-resume-campaign');
+  if (btnResumeCampaign) {
+    btnResumeCampaign.addEventListener('click', () => {
+      resumeCampaign();
+    });
+  }
 
   // Message Type Selection
   messageTypeSelect.addEventListener('change', (e) => {
@@ -556,8 +648,57 @@ async function checkWAStatus() {
     const res = await fetch(`${API_BASE}/session/status`);
     const data = await res.json();
 
+    // Self-healing transition timeout
+    if (state.targetStatus) {
+      const elapsed = Date.now() - state.transitionStart;
+      if (elapsed > 15000) { // 15 seconds timeout
+        console.warn(`%c[Safety] targetStatus (${state.targetStatus}) transition timed out after ${elapsed}ms. Resetting locks.`, 'color: #f59e0b; font-weight: bold;');
+        state.targetStatus = null;
+        showToast('Connection attempt timed out. Check gateway settings or logs.', 'warning');
+      }
+    }
+
+    // Check if target status transition has completed
+    if (state.targetStatus === 'connecting') {
+      const isStarted = ['initializing', 'authenticating', 'SCAN_QR', 'qr', 'qr_ready', 'CONNECTED', 'ready'].includes(data.status);
+      if (isStarted) {
+        state.targetStatus = null; // Transition completed!
+      } else if (data.status === 'UNKNOWN') {
+        state.targetStatus = null; // Failed to connect, gateway offline
+      }
+    } else if (state.targetStatus === 'disconnecting') {
+      const isStopped = ['stopping', 'stopped', 'DISCONNECTED', 'UNKNOWN'].includes(data.status);
+      if (isStopped) {
+        state.targetStatus = null; // Transition completed!
+      }
+    }
+
     if (state.isTransitioning) {
       console.log('%c[UI Poll] Skipped status poll UI update (transition in progress)', 'color: #94a3b8; font-size: 11px;');
+      return;
+    }
+
+    if (state.targetStatus === 'connecting') {
+      waStatusBadge.textContent = 'Connecting...';
+      waStatusBadge.className = 'badge badge-disconnected';
+      btnToggleConnection.textContent = 'Connecting...';
+      btnToggleConnection.className = 'btn btn-sm btn-primary';
+      btnToggleConnection.disabled = true;
+      connectionInfo.classList.add('hidden');
+      qrImage.classList.add('hidden');
+      qrPlaceholder.classList.remove('hidden');
+      qrPlaceholder.innerHTML = '<span class="qr-placeholder-text">⏳ Initializing session browser...</span>';
+      return;
+    } else if (state.targetStatus === 'disconnecting') {
+      waStatusBadge.textContent = 'Disconnecting...';
+      waStatusBadge.className = 'badge badge-disconnected';
+      btnToggleConnection.textContent = 'Disconnecting...';
+      btnToggleConnection.className = 'btn btn-sm btn-danger';
+      btnToggleConnection.disabled = true;
+      connectionInfo.classList.add('hidden');
+      qrImage.classList.add('hidden');
+      qrPlaceholder.classList.remove('hidden');
+      qrPlaceholder.innerHTML = '<span class="qr-placeholder-text">⏳ Shutting down WhatsApp session...</span>';
       return;
     }
     
@@ -604,12 +745,16 @@ async function checkWAStatus() {
       
       // Dynamic button state & configuration based on intermediate statuses
       if (data.status === 'initializing' || data.status === 'authenticating') {
-        btnToggleConnection.textContent = 'Connecting...';
-        btnToggleConnection.className = 'btn btn-sm btn-secondary';
-        btnToggleConnection.disabled = true;
+        btnToggleConnection.textContent = 'Cancel';
+        btnToggleConnection.className = 'btn btn-sm btn-danger';
+        btnToggleConnection.disabled = false;
       } else if (data.status === 'SCAN_QR' || data.status === 'qr' || data.status === 'qr_ready') {
         btnToggleConnection.textContent = 'Cancel';
         btnToggleConnection.className = 'btn btn-sm btn-danger';
+        btnToggleConnection.disabled = false;
+      } else if (data.status === 'stopping' || data.status === 'stopped' || data.status === 'DISCONNECTED' || data.status === 'UNKNOWN') {
+        btnToggleConnection.textContent = 'Connect';
+        btnToggleConnection.className = 'btn btn-sm btn-primary';
         btnToggleConnection.disabled = false;
       } else {
         btnToggleConnection.textContent = 'Connect';
@@ -629,6 +774,16 @@ async function checkWAStatus() {
           statusMsg = '⚡ Launching browser engine... please wait.';
         } else if (data.status === 'authenticating') {
           statusMsg = '🔐 Restoring saved session... Logging in automatically.';
+        } else if (data.status === 'stopping') {
+          statusMsg = '⏳ Shutting down WhatsApp session... please wait.';
+        } else if (data.status === 'stopped' || data.status === 'DISCONNECTED') {
+          statusMsg = 'Session disconnected. Click "Connect" to start a new session.';
+        } else if (data.status === 'UNKNOWN') {
+          if (data.error) {
+            statusMsg = `⚠️ ${data.error}`;
+          } else {
+            statusMsg = 'Session state unknown. Click "Connect" to start fresh.';
+          }
         }
         
         if (state.connectingTime >= 60) {
@@ -642,8 +797,15 @@ async function checkWAStatus() {
     }
   } catch (error) {
     console.error('Failed to get WhatsApp status:', error);
-    waStatusBadge.textContent = 'Offline';
+    waStatusBadge.textContent = 'Server Offline';
     waStatusBadge.className = 'badge badge-disconnected';
+    btnToggleConnection.textContent = 'Connect';
+    btnToggleConnection.className = 'btn btn-sm btn-primary';
+    btnToggleConnection.disabled = false;
+    connectionInfo.classList.add('hidden');
+    qrImage.classList.add('hidden');
+    qrPlaceholder.classList.remove('hidden');
+    qrPlaceholder.innerHTML = '<span class="qr-placeholder-text">⚠️ Cannot reach the bot server. Make sure it is running and refresh the page.</span>';
   }
 }
 
@@ -672,12 +834,24 @@ async function fetchQR() {
 async function toggleConnection() {
   if (state.isTransitioning) return;
 
+  // Safety timeout: force-reset if transition hangs for more than 15 seconds (Fix #6)
+  const safetyTimeout = setTimeout(() => {
+    if (state.isTransitioning || state.targetStatus) {
+      console.warn('%c[Safety] Transition stuck for 15s — force resetting state locks.', 'color: #f59e0b; font-weight: bold;');
+      state.isTransitioning = false;
+      state.targetStatus = null;
+      btnToggleConnection.disabled = false;
+      checkWAStatus();
+    }
+  }, 15000);
+
   const isConnected = state.waStatus === 'CONNECTED' || state.waStatus === 'ready';
   const isQRReady = state.waStatus === 'SCAN_QR' || state.waStatus === 'qr' || state.waStatus === 'qr_ready';
+  const isInitializing = state.waStatus === 'initializing' || state.waStatus === 'authenticating';
 
-  console.log(`%c[UI Action] Connection toggle clicked. ConnectedState: ${isConnected}, QRState: ${isQRReady}`, 'color: #3b82f6; font-weight: bold;');
+  console.log(`%c[UI Action] Connection toggle clicked. ConnectedState: ${isConnected}, QRState: ${isQRReady}, InitState: ${isInitializing}`, 'color: #3b82f6; font-weight: bold;');
 
-  if (isConnected || isQRReady) {
+  if (isConnected || isQRReady || isInitializing) {
     const confirmTitle = isConnected ? 'Disconnect WhatsApp' : 'Cancel Connection';
     const confirmMsg = isConnected 
       ? 'Are you sure you want to disconnect from WhatsApp? Active campaign transmissions will pause.' 
@@ -685,37 +859,64 @@ async function toggleConnection() {
       
     if (await showConfirmModal(confirmTitle, confirmMsg, isConnected ? 'Disconnect' : 'Cancel Link')) {
       state.isTransitioning = true;
+      state.targetStatus = 'disconnecting';
+      state.transitionStart = Date.now();
       btnToggleConnection.disabled = true;
       btnToggleConnection.textContent = 'Disconnecting...';
       try {
         waStatusBadge.textContent = 'Disconnecting...';
         showToast('Disconnecting WhatsApp session...', 'info');
-        await fetch(`${API_BASE}/session/disconnect`, { method: 'POST' });
+        const disconnRes = await fetch(`${API_BASE}/session/disconnect`, { method: 'POST' });
+        if (!disconnRes.ok) {
+          const errData = await disconnRes.json().catch(() => ({}));
+          const errMsg = errData.error || `Server returned ${disconnRes.status}`;
+          throw new Error(errMsg);
+        }
         console.log('%c[WA Connection] Disconnect request sent successfully.', 'color: #ef4444; font-weight: bold;');
       } catch (err) {
         console.error('Error disconnecting:', err);
-        showToast('Failed to request disconnect.', 'error');
+        showToast(err.message || 'Failed to request disconnect.', 'error');
+        state.targetStatus = null; // Clear target on immediate error
       } finally {
-        state.isTransitioning = false;
-        checkWAStatus();
+        clearTimeout(safetyTimeout);
+        // Immediately mark local status as disconnected (Fix #4)
+        state.waStatus = 'DISCONNECTED';
+        // Delay status check to let gateway complete transition (Fix #3)
+        setTimeout(async () => {
+          state.isTransitioning = false;
+          await checkWAStatus();
+        }, 1500);
       }
     }
   } else {
     state.isTransitioning = true;
+    state.targetStatus = 'connecting';
+    state.transitionStart = Date.now();
     btnToggleConnection.disabled = true;
     btnToggleConnection.textContent = 'Connecting...';
     try {
       waStatusBadge.textContent = 'Connecting...';
       qrPlaceholder.innerHTML = '<span class="qr-placeholder-text">Initializing session browser...</span>';
       showToast('WhatsApp engine initialization started.', 'info');
-      await fetch(`${API_BASE}/session/connect`, { method: 'POST' });
+      const connectRes = await fetch(`${API_BASE}/session/connect`, { method: 'POST' });
+      if (!connectRes.ok) {
+        const errData = await connectRes.json().catch(() => ({}));
+        const errMsg = errData.error || `Server returned ${connectRes.status}`;
+        throw new Error(errMsg);
+      }
       console.log('%c[WA Connection] Connect request sent successfully.', 'color: #10b981; font-weight: bold;');
     } catch (err) {
       console.error('Error connecting:', err);
-      showToast('Failed to start WhatsApp engine.', 'error');
+      showToast(err.message || 'Failed to start WhatsApp engine.', 'error');
+      qrPlaceholder.innerHTML = `<span class="qr-placeholder-text">❌ ${escapeHtml(err.message || 'Connection failed.')}</span>`;
+      state.targetStatus = null; // Clear target on immediate error
     } finally {
-      state.isTransitioning = false;
-      checkWAStatus();
+      clearTimeout(safetyTimeout);
+      // Short delay to let gateway begin initialization (Fix #3)
+      setTimeout(async () => {
+        state.isTransitioning = false;
+        await checkWAStatus();
+      }, 1000);
     }
   }
 }
@@ -781,6 +982,7 @@ async function loadSettings() {
     console.log('%c[Settings] Settings loaded from database.', 'color: #eab308; font-weight: bold;');
   } catch (err) {
     console.error('Failed to load settings:', err);
+    showToast(err.message || 'Failed to load gateway settings.', 'error');
   }
 }
 
@@ -923,6 +1125,15 @@ async function sendTestMessage() {
     return;
   }
 
+  const numberList = numbers.split(',').map(n => n.trim()).filter(n => n);
+  for (const num of numberList) {
+    const cleanNum = num.replace(/[^\d]/g, '');
+    if (cleanNum.length !== 10 && !(cleanNum.length === 12 && cleanNum.startsWith('91'))) {
+      showToast(`Invalid number: ${num}. Must be a 10-digit Indian number.`, 'error');
+      return;
+    }
+  }
+
   if (state.testMessageType === 'text' && !message) {
     showToast('Please enter a test message.', 'error');
     return;
@@ -997,29 +1208,24 @@ async function sendTestMessage() {
 // ==========================================
 
 async function loadTemplates() {
-  try {
-    const res = await fetch(`${API_BASE}/templates`);
-    state.templates = await res.json();
-    console.log(`%c[Templates] Loaded ${state.templates.length} templates from SQLite.`, 'color: #ec4899; font-weight: bold;');
-    
-    // Fill select dropdown
-    templateSelect.innerHTML = '';
-    state.templates.forEach(t => {
-      const opt = document.createElement('option');
-      opt.value = t.id;
-      const badge = t.messageType && t.messageType !== 'text' ? ` [${t.messageType.toUpperCase()}]` : '';
-      opt.textContent = `${t.name}${badge}`;
-      templateSelect.appendChild(opt);
-    });
+  state.templates = await safeFetchJson(`${API_BASE}/templates`, {}, []);
+  console.log(`%c[Templates] Loaded ${state.templates.length} templates from SQLite.`, 'color: #ec4899; font-weight: bold;');
+  
+  // Fill select dropdown
+  templateSelect.innerHTML = '';
+  state.templates.forEach(t => {
+    const opt = document.createElement('option');
+    opt.value = t.id;
+    const badge = t.messageType && t.messageType !== 'text' ? ` [${t.messageType.toUpperCase()}]` : '';
+    opt.textContent = `${t.name}${badge}`;
+    templateSelect.appendChild(opt);
+  });
 
-    if (state.templates.length > 0) {
-      // Select first
-      selectTemplate(state.templates[0].id);
-    } else {
-      initNewTemplate();
-    }
-  } catch (error) {
-    console.error('Failed to load templates:', error);
+  if (state.templates.length > 0) {
+    // Select first
+    selectTemplate(state.templates[0].id);
+  } else {
+    initNewTemplate();
   }
 }
 
@@ -1212,6 +1418,133 @@ async function duplicateTemplate() {
   }
 }
 
+function handleTemplateFileSelect() {
+  const file = templateFileInput.files[0];
+  if (!file) return;
+
+  templateImportFilename.textContent = file.name;
+  templateImportConfirmWrapper.classList.remove('hidden');
+  
+  // Hide previous results
+  templateImportResult.classList.add('hidden');
+}
+
+async function uploadTemplatesExcel() {
+  const file = templateFileInput.files[0];
+  if (!file) return;
+
+  btnConfirmTemplateImport.disabled = true;
+  btnConfirmTemplateImport.textContent = 'Uploading...';
+
+  const formData = new FormData();
+  formData.append('file', file);
+
+  try {
+    const res = await fetch(`${API_BASE}/templates/import`, {
+      method: 'POST',
+      body: formData
+    });
+
+    const data = await res.json();
+    
+    if (!res.ok) {
+      throw new Error(data.error || 'Failed to import templates.');
+    }
+
+    // Success! Show summary
+    templateImportResult.classList.remove('hidden');
+    templateImportResult.style.backgroundColor = 'rgba(16, 185, 129, 0.1)';
+    templateImportResult.style.border = '1px solid rgba(16, 185, 129, 0.2)';
+    templateImportResult.style.color = '#10b981';
+
+    templateImportResultSummary.textContent = `Import complete: ${data.imported} imported, ${data.skipped} skipped, ${data.failed} failed`;
+    
+    templateImportResultReasons.innerHTML = '';
+    if (data.reasons && data.reasons.length > 0) {
+      data.reasons.forEach(reason => {
+        const li = document.createElement('li');
+        li.textContent = reason;
+        templateImportResultReasons.appendChild(li);
+      });
+      templateImportResultReasons.style.display = 'block';
+    } else {
+      templateImportResultReasons.style.display = 'none';
+    }
+
+    showToast(`Successfully imported ${data.imported} templates!`, 'success');
+
+    await loadTemplates();
+
+    templateFileInput.value = '';
+    templateImportConfirmWrapper.classList.add('hidden');
+  } catch (error) {
+    console.error('[Template Import Error]', error);
+    showToast(error.message, 'error');
+
+    templateImportResult.classList.remove('hidden');
+    templateImportResult.style.backgroundColor = 'rgba(239, 68, 68, 0.1)';
+    templateImportResult.style.border = '1px solid rgba(239, 68, 68, 0.2)';
+    templateImportResult.style.color = '#ef4444';
+    templateImportResultSummary.textContent = `Upload failed: ${error.message}`;
+    templateImportResultReasons.innerHTML = '';
+    templateImportResultReasons.style.display = 'none';
+  } finally {
+    btnConfirmTemplateImport.disabled = false;
+    btnConfirmTemplateImport.textContent = 'Confirm Upload';
+  }
+}
+
+function downloadSampleExcel() {
+  if (typeof XLSX === 'undefined') {
+    showToast('Excel library not loaded. Please wait a moment.', 'error');
+    return;
+  }
+  
+  const data = [
+    { 'template_name': 'Rental Follow Up', 'message': 'Hello {{name}},\n\nThank you for checking out our property. Let me know if you would like to schedule a viewing!' }
+  ];
+
+  const worksheet = XLSX.utils.json_to_sheet(data);
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, 'Templates');
+  
+  const excelBuffer = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
+  const blob = new Blob([excelBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'sample_templates.xlsx';
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function downloadSampleLeads() {
+  if (typeof XLSX === 'undefined') {
+    showToast('Excel library not loaded. Please wait a moment.', 'error');
+    return;
+  }
+  
+  const data = [
+    { 'Name': 'Anshu Purviya', 'Phone': '917000391986' },
+    { 'Name': 'Nikhar Tale', 'Phone': '918000000000' }
+  ];
+
+  const worksheet = XLSX.utils.json_to_sheet(data);
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, 'Leads');
+  
+  const excelBuffer = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
+  const blob = new Blob([excelBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'sample_leads.xlsx';
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 async function handleTplMediaFileSelect() {
   const selectedFiles = Array.from(tplMediaFileInput.files);
   if (selectedFiles.length === 0) return;
@@ -1331,6 +1664,23 @@ async function handleFileSelect() {
   const file = fileInput.files[0];
   if (!file) return;
 
+  // Client-side row count validation for CSVs
+  if (file.name.toLowerCase().endsWith('.csv')) {
+    try {
+      const text = await file.text();
+      const lines = text.split(/\r?\n/).filter(line => line.trim().length > 0);
+      const dataRows = Math.max(0, lines.length - 1);
+      if (dataRows > 80) {
+        showToast(`Maximum 80 leads allowed per campaign. Your file has ${dataRows} leads.`, 'error');
+        fileInfoText.textContent = 'Error: Row limit exceeded';
+        fileInput.value = '';
+        return;
+      }
+    } catch (e) {
+      console.error('Error reading CSV client-side', e);
+    }
+  }
+
   console.log(`%c[UI Action] File selected: ${file.name} (${file.size} bytes). Uploading...`, 'color: #10b981; font-weight: bold;');
   fileInfoText.textContent = `${file.name} (${(file.size / 1024).toFixed(1)} KB)`;
   
@@ -1339,6 +1689,9 @@ async function handleFileSelect() {
 
   try {
     fileInfoText.textContent = 'Processing file...';
+    leadsImportConfirmWrapper.classList.add('hidden');
+    campaignReadySection.classList.add('hidden');
+
     const res = await fetch(`${API_BASE}/bulk/upload`, {
       method: 'POST',
       body: formData
@@ -1350,23 +1703,53 @@ async function handleFileSelect() {
     }
 
     const data = await res.json();
-    state.uploadedLeads = data.leads;
+    state.tempUploadedLeads = data.leads;
+    state.tempUploadedCount = data.count;
     
-    // Update dashboard campaign state
-    readyTotalCount.textContent = data.count;
-    campaignReadySection.classList.remove('hidden');
-    campaignProgressSection.classList.add('hidden');
+    // Show confirmation button and count
+    leadsImportCount.textContent = data.count;
+    leadsImportConfirmWrapper.classList.remove('hidden');
+    fileInfoText.textContent = `${file.name} (Ready)`;
     
-    showToast(`Successfully parsed ${data.count} leads from file!`, 'success');
-    console.log(`%c[File Upload] Successfully parsed ${data.count} rows from spreadsheet.`, 'color: #10b981; font-weight: bold;', data.leads);
-    updatePreview();
+    showToast(`Found ${data.count} leads in file. Please click 'Confirm Import' below.`, 'info');
+    console.log(`%c[File Upload] Found ${data.count} rows, awaiting user confirmation.`, 'color: #3b82f6; font-weight: bold;');
   } catch (error) {
     showToast(error.message, 'error');
     console.error('%c[File Upload] Upload/Parse error:', 'color: #ef4444; font-weight: bold;', error.message);
     fileInfoText.textContent = 'Error parsing file';
     state.uploadedLeads = [];
+    state.tempUploadedLeads = null;
+    state.tempUploadedCount = 0;
     campaignReadySection.classList.add('hidden');
+    leadsImportConfirmWrapper.classList.add('hidden');
   }
+}
+
+function confirmImportLeads() {
+  if (!state.tempUploadedLeads) return;
+
+  state.uploadedLeads = state.tempUploadedLeads;
+  readyTotalCount.textContent = state.uploadedLeads.length;
+  
+  // Show campaign ready section
+  campaignReadySection.classList.remove('hidden');
+  campaignProgressSection.classList.add('hidden');
+  
+  // Hide confirm panel
+  leadsImportConfirmWrapper.classList.add('hidden');
+  
+  if (fileInput.files[0]) {
+    fileInfoText.textContent = `${fileInput.files[0].name} (Imported)`;
+  }
+
+  showToast(`Successfully imported ${state.uploadedLeads.length} leads!`, 'success');
+  console.log(`%c[File Upload] Confirmed import of ${state.uploadedLeads.length} rows.`, 'color: #10b981; font-weight: bold;', state.uploadedLeads);
+
+  // Clear temp values
+  state.tempUploadedLeads = null;
+  state.tempUploadedCount = 0;
+  
+  updatePreview();
 }
 
 async function handleMediaFileSelect() {
@@ -1475,8 +1858,8 @@ async function startCampaign() {
     showToast('Please upload a leads file first.', 'error');
     return;
   }
-  if (!state.selectedTemplateId) {
-    showToast('Please select or create a template.', 'error');
+  if (state.templates.length === 0) {
+    showToast('Please create at least one template.', 'error');
     return;
   }
   if (state.waStatus !== 'CONNECTED' && state.waStatus !== 'ready') {
@@ -1498,7 +1881,7 @@ async function startCampaign() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        templateId: state.selectedTemplateId,
+        templateId: state.templates[0].id,
         leads: state.uploadedLeads,
         delaySeconds: delay,
         messageType: state.messageType,
@@ -1572,12 +1955,49 @@ function updateCampaignProgress(data) {
     return;
   }
 
+  state.activeBatchId = data.batchId;
+
   // Update numbers
   progressTotal.textContent = data.totalLeads;
   progressSent.textContent = data.sentCount;
   progressFailed.textContent = data.failedCount;
   progressPending.textContent = data.pendingCount;
+
+  // Status colors & Labels
+  const progressStatusText = document.getElementById('progress-status-text');
+  let color = '';
+  if (data.status === 'SENDING') color = 'text-primary';
+  else if (data.status === 'PAUSED') color = 'text-warning';
+  else if (data.status === 'COMPLETED') color = 'text-success';
+  else if (data.status === 'CANCELLED') color = 'text-danger';
+  progressStatusText.className = color;
   progressStatusText.textContent = data.status;
+
+  // Daily cap
+  const dailyCap = document.getElementById('daily-cap-progress');
+  if (dailyCap) dailyCap.textContent = `Sent this run: ${data.sentCount} / ${data.totalLeads}`;
+
+  // Session break detection
+  const sessionBreakMsg = document.getElementById('session-break-msg');
+  if (sessionBreakMsg) {
+    if (data.status === 'SENDING' && data.sentCount > 0 && data.sentCount % 20 === 0 && data.pendingCount > 0) {
+      sessionBreakMsg.classList.remove('hidden');
+    } else {
+      sessionBreakMsg.classList.add('hidden');
+    }
+  }
+
+  // Resume button visibility
+  const btnResume = document.getElementById('btn-resume-campaign');
+  if (btnResume) {
+    if (data.status === 'PAUSED') {
+      btnResume.classList.remove('hidden');
+      btnResume.disabled = false;
+      btnResume.textContent = 'Resume';
+    } else {
+      btnResume.classList.add('hidden');
+    }
+  }
 
   // Update progress bar
   const pct = data.totalLeads > 0 ? ((data.sentCount + data.failedCount) / data.totalLeads) * 100 : 0;
@@ -1585,6 +2005,29 @@ function updateCampaignProgress(data) {
 
   // Render logs table
   renderLogs(data.leads || []);
+}
+
+async function resumeCampaign() {
+  const btnResume = document.getElementById('btn-resume-campaign');
+  try {
+    btnResume.disabled = true;
+    btnResume.textContent = 'Resuming...';
+    const res = await fetch(`${API_BASE}/resume`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ batchId: state.activeBatchId })
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error || 'Failed to resume campaign.');
+    }
+    showToast('Campaign resuming...', 'success');
+    checkActiveCampaign();
+  } catch (error) {
+    showToast(error.message, 'error');
+    btnResume.disabled = false;
+    btnResume.textContent = 'Resume';
+  }
 }
 
 function renderLogs(leads) {
@@ -1678,52 +2121,47 @@ async function checkActiveCampaign() {
 }
 
 async function loadCampaignHistory() {
-  try {
-    const res = await fetch(`${API_BASE}/bulk/batches`);
-    const batches = await res.json();
-    state.batches = batches;
-    console.log(`%c[History] Loaded ${batches.length} past campaign batches from SQLite.`, 'color: #3b82f6; font-weight: bold;');
+  const batches = await safeFetchJson(`${API_BASE}/bulk/batches`, {}, []);
+  state.batches = batches;
+  console.log(`%c[History] Loaded ${batches.length} past campaign batches from SQLite.`, 'color: #3b82f6; font-weight: bold;');
 
-    if (batches.length === 0) {
-      historyTbody.innerHTML = `
-        <tr>
-          <td colspan="6" class="no-history">
-            <div class="empty-state">
-              <div class="empty-state-icon">📜</div>
-              <div class="empty-state-title">No Campaign History</div>
-              <div class="empty-state-desc">You haven't run any campaigns yet. Send your first campaign to view history and download reports.</div>
-            </div>
-          </td>
-        </tr>
-      `;
-      return;
-    }
-
-    historyTbody.innerHTML = '';
-    batches.forEach(b => {
-      const tr = document.createElement('tr');
-      const dateStr = new Date(b.createdAt).toLocaleString();
-      
-      let statusClass = 'text-muted';
-      if (b.status === 'COMPLETED') statusClass = 'text-success';
-      if (b.status === 'CANCELLED') statusClass = 'text-danger';
-      if (b.status === 'SENDING') statusClass = 'text-primary';
-
-      tr.innerHTML = `
-        <td>${dateStr}</td>
-        <td><strong>${b.totalLeads}</strong></td>
-        <td><span class="text-success">${b.sentCount}</span></td>
-        <td><span class="text-danger">${b.failedCount}</span></td>
-        <td><span class="${statusClass}">${b.status}</span></td>
-        <td>
-          <a href="${API_BASE}/bulk/batches/${b.id}/export" class="btn btn-sm btn-secondary btn-export-link">Download CSV</a>
+  if (batches.length === 0) {
+    historyTbody.innerHTML = `
+      <tr>
+        <td colspan="6" class="no-history">
+          <div class="empty-state">
+            <div class="empty-state-icon">📜</div>
+            <div class="empty-state-title">No Campaign History</div>
+            <div class="empty-state-desc">You haven't run any campaigns yet. Send your first campaign to view history and download reports.</div>
+          </div>
         </td>
-      `;
-      historyTbody.appendChild(tr);
-    });
-  } catch (err) {
-    console.error('Failed to load campaign history:', err);
+      </tr>
+    `;
+    return;
   }
+
+  historyTbody.innerHTML = '';
+  batches.forEach(b => {
+    const tr = document.createElement('tr');
+    const dateStr = new Date(b.createdAt).toLocaleString();
+    
+    let statusClass = 'text-muted';
+    if (b.status === 'COMPLETED') statusClass = 'text-success';
+    if (b.status === 'CANCELLED') statusClass = 'text-danger';
+    if (b.status === 'SENDING') statusClass = 'text-primary';
+
+    tr.innerHTML = `
+      <td>${dateStr}</td>
+      <td><strong>${b.totalLeads}</strong></td>
+      <td><span class="text-success">${b.sentCount}</span></td>
+      <td><span class="text-danger">${b.failedCount}</span></td>
+      <td><span class="${statusClass}">${b.status}</span></td>
+      <td>
+        <a href="${API_BASE}/bulk/batches/${b.id}/export" class="btn btn-sm btn-secondary btn-export-link">Download CSV</a>
+      </td>
+    `;
+    historyTbody.appendChild(tr);
+  });
 }
 
 // Helpers

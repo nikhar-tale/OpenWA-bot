@@ -112,27 +112,6 @@ const initPromise = (async () => {
     await runQuery("ALTER TABLE templates ADD COLUMN mediaFiles TEXT DEFAULT '[]'");
   }
 
-  // Default templates seeding
-  const defaultTemplates = [
-    {
-      id: 'tpl_test_campaign',
-      name: 'Anshu & Nikhar Test Campaign',
-      content: 'Hello {{name}},\n\nWe are testing the bulk messaging bot system for the property rental business of Anshu Purviya, built by expert developer Nikhar Tale.\n\nThank you for your patience!'
-    },
-    {
-      id: 'tpl_default',
-      name: 'Default Follow-up',
-      content: 'Hello {{name}},\n\nThank you for contacting us regarding our property rentals. We have received your query and will get back to you shortly!'
-    }
-  ];
-
-  for (const tpl of defaultTemplates) {
-    const existing = await getQuery('SELECT id FROM templates WHERE id = ?', [tpl.id]);
-    if (!existing) {
-      await runQuery('INSERT INTO templates (id, name, content) VALUES (?, ?, ?)', [tpl.id, tpl.name, tpl.content]);
-    }
-  }
-
   isInitialized = true;
 })();
 

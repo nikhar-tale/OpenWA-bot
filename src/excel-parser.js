@@ -19,8 +19,14 @@ function mapRowsToLeads(rows) {
       
       // Match "phone", "phonenumber", "mobile", "mobilenumber", "number"
       if (normalizedKey === 'phone' || normalizedKey === 'phonenumber' || normalizedKey === 'mobile' || normalizedKey === 'mobilenumber' || normalizedKey === 'number') {
-        const val = String(row[key]).trim();
-        if (val) phone = val;
+        let val = String(row[key]).trim();
+        if (val) {
+          let cleanNumber = val.replace(/[^\d]/g, '');
+          if (cleanNumber.length === 10) {
+            cleanNumber = `91${cleanNumber}`;
+          }
+          phone = cleanNumber || val;
+        }
       }
     }
 

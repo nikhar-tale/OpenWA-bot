@@ -49,6 +49,19 @@
                 <span class="file-info" id="file-info-text">No file selected</span>
               </div>
             </div>
+            <!-- Download sample leads -->
+            <div class="mt-md" style="text-align: center;">
+              <button id="btn-download-sample-leads" class="btn btn-sm btn-link" style="color: #38bdf8; text-decoration: underline; background: none; border: none; cursor: pointer; padding: 0;">
+                📥 Download Sample Leads Excel
+              </button>
+            </div>
+            <!-- Leads Import Confirmation -->
+            <div id="leads-import-confirm-wrapper" class="hidden mt-md" style="padding: 12px; border: 1px solid var(--border-color); border-radius: var(--radius-md); background: rgba(255, 255, 255, 0.02); text-align: center;">
+              <p style="font-size: 0.9em; margin-bottom: 8px;">Found <strong id="leads-import-count">0</strong> leads in file.</p>
+              <button id="btn-confirm-leads-import" class="btn btn-success w-100">
+                <span aria-hidden="true">✅</span> Confirm Import Leads
+              </button>
+            </div>
           </div>
 
           <div class="card card-test-sender mt-xl">
@@ -105,9 +118,9 @@
           <div class="card card-sender" id="sender-card">
             <div class="card-header-actions">
               <h2>Campaign Console</h2>
-              <div class="delay-wrapper">
-                <label for="delay-input">Delay (sec):</label>
-                <input type="number" id="delay-input" class="form-control delay-control" min="1" max="60" value="5">
+              <div class="delay-wrapper" style="text-align: right;">
+                <label for="delay-input" title="System automatically adds a random 0-35s buffer to prevent spam bans.">Min Delay (sec): <span style="cursor:help;">ℹ️</span></label>
+                <input type="number" id="delay-input" class="form-control delay-control" min="20" max="120" value="20" title="Minimum delay. Actual delay will be randomized to prevent bans.">
               </div>
             </div>
             
@@ -156,8 +169,8 @@
 
               <!-- Preview Card -->
               <div class="preview-card">
-                <span class="preview-badge">Message Preview</span>
-                <p id="preview-text" class="preview-text">Select a template to see a personalized preview here.</p>
+                <span class="preview-badge">Randomized Templates Active</span>
+                <p id="preview-text" class="preview-text">All saved templates will be used randomly during campaign.</p>
               </div>
 
               <div class="camp-actions">
@@ -189,8 +202,15 @@
               </div>
 
               <div class="camp-status-message">
-                <span>Status: <strong id="progress-status-text">SENDING</strong></span>
-                <button id="btn-cancel-campaign" class="btn btn-sm btn-danger">Cancel Campaign</button>
+                <div>
+                  <span>Status: <strong id="progress-status-text">SENDING</strong></span>
+                  <div id="session-break-msg" class="text-warning hidden" style="font-size: 0.85em; margin-top: 5px;">⏳ Session break in progress... resuming shortly</div>
+                  <div class="text-muted" style="font-size: 0.85em; margin-top: 5px;" id="daily-cap-progress">Sent this run: 0 / 80</div>
+                </div>
+                <div>
+                  <button id="btn-resume-campaign" class="btn btn-sm btn-success hidden">Resume</button>
+                  <button id="btn-cancel-campaign" class="btn btn-sm btn-danger">Cancel</button>
+                </div>
               </div>
             </div>
           </div>
@@ -230,15 +250,53 @@
     <!-- Tab Panel: Templates -->
     <div id="tab-templates" class="tab-content hidden" role="tabpanel" aria-labelledby="tab-btn-templates">
       <div class="template-grid">
-        <!-- Left: Template Selection -->
-        <div class="card template-list-card">
-          <div class="card-header-actions">
-            <h2>Templates</h2>
-            <button id="btn-new-template" class="btn btn-sm btn-secondary">+ New</button>
+        <!-- Left: Template Selection & Import -->
+        <div class="column-left-templates">
+          <div class="card template-list-card">
+            <div class="card-header-actions">
+              <h2>Templates</h2>
+              <button id="btn-new-template" class="btn btn-sm btn-secondary">+ New</button>
+            </div>
+            <div class="template-selector-wrapper">
+              <label for="template-select" class="status-label">Select Template to Edit:</label>
+              <select id="template-select" class="form-control" size="10"></select>
+              <div class="mt-sm" style="background: #e0f2fe; padding: 10px; border-radius: 4px; font-size: 0.85em; border: 1px solid #bae6fd; color: #0369a1;">
+                <strong>ℹ️ Note:</strong> All saved templates will be used randomly during campaign.
+              </div>
+            </div>
           </div>
-          <div class="template-selector-wrapper">
-            <label for="template-select" class="status-label">Select Template:</label>
-            <select id="template-select" class="form-control" size="10"></select>
+
+          <!-- Left: Template Import Card -->
+          <div class="card template-import-card">
+            <h2>Bulk Import</h2>
+            <p class="card-desc">Upload an Excel (.xlsx or .xls) file containing <strong>template_name</strong> and <strong>message</strong> columns to import templates.</p>
+            
+            <div class="import-actions mt-md">
+              <button id="btn-import-picker" class="btn btn-secondary w-100">
+                <span aria-hidden="true">📁</span> Import Templates from Excel
+              </button>
+              <input type="file" id="template-file-input" accept=".xlsx,.xls" class="hidden">
+            </div>
+
+            <div id="template-import-confirm-wrapper" class="hidden mt-md">
+              <p class="selected-file-text" style="font-size: 0.9em; margin-bottom: 8px;">Selected: <strong id="template-import-filename">filename.xlsx</strong></p>
+              <button id="btn-confirm-template-import" class="btn btn-success w-100 mt-xs">
+                <span aria-hidden="true">📤</span> Confirm Upload
+              </button>
+            </div>
+
+            <!-- Result summary -->
+            <div id="template-import-result" class="hidden mt-md" style="padding: 12px; border-radius: 6px; font-size: 0.9em;">
+              <div id="template-import-result-summary" style="font-weight: 600;"></div>
+              <ul id="template-import-result-reasons" class="mt-sm" style="padding-left: 16px; margin: 8px 0 0 0; max-height: 150px; overflow-y: auto; color: inherit; font-size: 0.85em; list-style-type: disc;"></ul>
+            </div>
+
+            <!-- Download sample -->
+            <div class="mt-md" style="text-align: center;">
+              <button id="btn-download-sample-template" class="btn btn-sm btn-link" style="color: #38bdf8; text-decoration: underline; background: none; border: none; cursor: pointer; padding: 0;">
+                📥 Download Sample Excel
+              </button>
+            </div>
           </div>
         </div>
 
@@ -381,6 +439,7 @@
   <!-- Toast Notification Container -->
   <div id="toast-container" class="toast-container"></div>
 
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
