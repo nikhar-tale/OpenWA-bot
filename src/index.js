@@ -293,6 +293,87 @@ app.post('/api/settings', asyncHandler(async (req, res) => {
 }));
 
 // ==========================================
+// SESSION MANAGER ENDPOINTS
+// ==========================================
+
+app.get('/api/sessions', asyncHandler(async (req, res) => {
+  const activeSessionName = await waClient.getActiveSessionName();
+  try {
+    const list = await waClient.getSessionsList();
+    res.json({
+      activeSession: activeSessionName,
+      sessions: list
+    });
+  } catch (err) {
+    res.status(500).json({ 
+      error: 'Failed to retrieve sessions list from OpenWA gateway: ' + err.message,
+      activeSession: activeSessionName,
+      sessions: []
+    });
+  }
+}));
+
+app.post('/api/sessions/select', asyncHandler(async (req, res) => {
+  const { sessionName } = req.body;
+  if (!sessionName) {
+    return res.status(400).json({ error: 'sessionName is required.' });
+  }
+  
+  console.log(`\x1b[35m[Server API]\x1b[0m Selecting active WhatsApp session: "${sessionName}"`);
+  await db.saveSetting('session_id', sessionName.trim());
+  waClient.clearSessionCache();
+  
+  res.json({ success: true, activeSession: sessionName.trim() });
+}));
+
+app.post('/api/sessions/create', asyncHandler(async (req, res) => {
+  const { sessionName } = req.body;
+  if (!sessionName || !sessionName.trim()) {
+    return res.status(400).json({ error: 'Session Name is required.' });
+  }
+  const cleanName = sessionName.trim().replace(/[^a-zA-Z0-9_-]/g, '');
+  if (!cleanName) {
+    return res.status(400).json({ error: 'Invalid Session Name. Only alphanumeric, dashes, and underscores allowed.' });
+  }
+
+  console.log(`\x1b[35m[Server API]\x1b[0m Creating and switching to new session: "${cleanName}"`);
+  
+  try {
+    await waClient.createSession(cleanName);
+    await db.saveSetting('session_id', cleanName);
+    waClient.clearSessionCache();
+    
+    res.json({ success: true, activeSession: cleanName });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to create session on gateway: ' + err.message });
+  }
+}));
+
+app.delete('/api/sessions/:name', asyncHandler(async (req, res) => {
+  const sessionName = req.params.name;
+  if (!sessionName) {
+    return res.status(400).json({ error: 'Session name is required.' });
+  }
+
+  console.log(`\x1b[35m[Server API]\x1b[0m Deleting session: "${sessionName}"`);
+  
+  try {
+    await waClient.deleteSession(sessionName);
+    
+    // If we deleted the currently active session, revert setting to default 'leads-bot-session'
+    const activeSessionName = await waClient.getActiveSessionName();
+    if (activeSessionName === sessionName) {
+      await db.saveSetting('session_id', 'leads-bot-session');
+      waClient.clearSessionCache();
+    }
+    
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to delete session: ' + err.message });
+  }
+}));
+
+// ==========================================
 // TEMPLATE CRUD ENDPOINTS
 // ==========================================
 

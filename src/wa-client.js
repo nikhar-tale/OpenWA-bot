@@ -1,7 +1,14 @@
 const axios = require('axios');
 const db = require('./db');
 
-const SESSION_NAME = process.env.SESSION_ID || 'leads-bot-session';
+async function getActiveSessionName() {
+  const settings = await db.getSettings();
+  return process.env.SESSION_ID || settings.session_id || 'leads-bot-session';
+}
+
+function clearSessionCache() {
+  cachedSessionUuid = null;
+}
 
 let cachedSessionUuid = null;
 
@@ -57,19 +64,20 @@ async function getSessionUuid() {
   }
 
   const client = await getHttpClient();
-  console.log(`\x1b[34m[Gateway Req]\x1b[0m Resolving session UUID for '${SESSION_NAME}'...`);
+  const sessionName = await getActiveSessionName();
+  console.log(`\x1b[34m[Gateway Req]\x1b[0m Resolving session UUID for '${sessionName}'...`);
 
   try {
     const res = await client.get('/sessions');
-    const existing = res.data.find(s => s.name === SESSION_NAME);
+    const existing = res.data.find(s => s.name === sessionName);
     if (existing) {
       cachedSessionUuid = existing.id;
       console.log(`\x1b[35m[Gateway Res]\x1b[0m Resolved session UUID: ${cachedSessionUuid}`);
       return cachedSessionUuid;
     }
 
-    console.log(`\x1b[33m[Gateway Log]\x1b[0m Session '${SESSION_NAME}' not found. Creating a new one...`);
-    const createRes = await client.post('/sessions', { name: SESSION_NAME });
+    console.log(`\x1b[33m[Gateway Log]\x1b[0m Session '${sessionName}' not found. Creating a new one...`);
+    const createRes = await client.post('/sessions', { name: sessionName });
     cachedSessionUuid = createRes.data.id;
     console.log(`\x1b[35m[Gateway Res]\x1b[0m Session created. UUID: ${cachedSessionUuid}`);
     return cachedSessionUuid;
@@ -78,7 +86,7 @@ async function getSessionUuid() {
       try {
         console.log(`\x1b[33m[Gateway Log]\x1b[0m Session conflict (409). Fetching session uuid list...`);
         const res = await client.get('/sessions');
-        const existing = res.data.find(s => s.name === SESSION_NAME);
+        const existing = res.data.find(s => s.name === sessionName);
         if (existing) {
           cachedSessionUuid = existing.id;
           return cachedSessionUuid;
@@ -293,7 +301,8 @@ async function resetSession() {
     
     await new Promise(resolve => setTimeout(resolve, 1000));
     
-    const sessionDir = path.resolve(__dirname, '..', '..', 'OpenWA', 'data', 'sessions', `session-${SESSION_NAME}`);
+    const sessionName = await getActiveSessionName();
+    const sessionDir = path.resolve(__dirname, '..', '..', 'OpenWA', 'data', 'sessions', `session-${sessionName}`);
     console.log('\x1b[33m[Gateway Log]\x1b[0m Cleaning up session directory:', sessionDir);
     
     if (fs.existsSync(sessionDir)) {
@@ -330,6 +339,70 @@ async function resetSession() {
   }
 }
 
+async function getSessionsList() {
+  try {
+    const client = await getHttpClient();
+    const res = await client.get('/sessions');
+    return res.data;
+  } catch (error) {
+    const errMsg = getErrorMessage(error);
+    console.error('\x1b[31m[Gateway Err]\x1b[0m Error listing sessions:', errMsg);
+    throw new Error(errMsg);
+  }
+}
+
+async function createSession(sessionName) {
+  try {
+    const client = await getHttpClient();
+    const res = await client.post('/sessions', { name: sessionName });
+    return res.data;
+  } catch (error) {
+    const errMsg = getErrorMessage(error);
+    console.error('\x1b[31m[Gateway Err]\x1b[0m Error creating session:', errMsg);
+    throw new Error(errMsg);
+  }
+}
+
+async function deleteSession(sessionName) {
+  try {
+    const client = await getHttpClient();
+    // Resolve UUID of the target session by name
+    const res = await client.get('/sessions');
+    const existing = res.data.find(s => s.name === sessionName);
+    if (!existing) {
+      throw new Error(`Session '${sessionName}' not found on gateway.`);
+    }
+    const uuid = existing.id;
+    
+    // Stop the session on gateway
+    try {
+      await client.post(`/sessions/${uuid}/stop`);
+    } catch (e) {
+      console.log(`[Gateway Log] Stop failed during delete of session ${sessionName}:`, e.message);
+    }
+    
+    // Delete session on gateway
+    await client.delete(`/sessions/${uuid}`);
+    
+    // Clean up local directory
+    const fs = require('fs');
+    const path = require('path');
+    const sessionDir = path.resolve(__dirname, '..', '..', 'OpenWA', 'data', 'sessions', `session-${sessionName}`);
+    if (fs.existsSync(sessionDir)) {
+      try {
+        fs.rmSync(sessionDir, { recursive: true, force: true });
+        console.log(`[Gateway Res] Session directory deleted for deleted session: ${sessionName}`);
+      } catch (err) {
+        console.warn(`[Gateway Err] Failed to delete session directory during delete of session ${sessionName}:`, err.message);
+      }
+    }
+  } catch (error) {
+    const errMsg = getErrorMessage(error);
+    console.error('\x1b[31m[Gateway Err]\x1b[0m Error deleting session:', errMsg);
+    throw new Error(errMsg);
+  }
+}
+
 module.exports = {
   getSessionStatus,
   startSession,
@@ -337,5 +410,10 @@ module.exports = {
   getSessionQR,
   sendTextMessage,
   sendMediaMessage,
-  resetSession
+  resetSession,
+  getActiveSessionName,
+  clearSessionCache,
+  getSessionsList,
+  createSession,
+  deleteSession
 };

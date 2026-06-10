@@ -244,6 +244,13 @@ const settingsHfToken = document.getElementById('settings-hf-token');
 const btnSaveSettings = document.getElementById('btn-save-settings');
 const settingsMsg = document.getElementById('settings-msg');
 
+// Session Manager Elements
+const sessionsListSelect = document.getElementById('sessions-list-select');
+const btnSelectSession = document.getElementById('btn-select-session');
+const btnDeleteSession = document.getElementById('btn-delete-session');
+const newSessionNameInput = document.getElementById('new-session-name-input');
+const btnCreateSession = document.getElementById('btn-create-session');
+
 // Test Sender Elements
 const testNumbersInput = document.getElementById('test-numbers');
 const testMessageInput = document.getElementById('test-message');
@@ -403,6 +410,7 @@ function setupEventListeners() {
         loadTemplates();
       } else if (targetTab === 'settings') {
         loadSettings();
+        loadSessions();
       }
     });
   });
@@ -425,6 +433,19 @@ function setupEventListeners() {
   btnSaveSettings.addEventListener('click', () => {
     console.log('%c[UI Event] Button Tap: Save Settings Clicked', 'color: #eab308; font-weight: bold; background: #422006; padding: 2px 6px; border-radius: 3px;');
     saveSettings();
+  });
+
+  btnSelectSession.addEventListener('click', () => {
+    console.log('%c[UI Event] Switch Session Clicked', 'color: #3b82f6; font-weight: bold;');
+    switchSession();
+  });
+  btnDeleteSession.addEventListener('click', () => {
+    console.log('%c[UI Event] Delete Session Clicked', 'color: #ef4444; font-weight: bold;');
+    deleteSession();
+  });
+  btnCreateSession.addEventListener('click', () => {
+    console.log('%c[UI Event] Create Session Clicked', 'color: #10b981; font-weight: bold;');
+    createSession();
   });
 
   // Test Sender
@@ -1022,6 +1043,140 @@ async function saveSettings() {
     btnSaveSettings.disabled = false;
     btnSaveSettings.innerHTML = '<span aria-hidden="true">💾</span> Save Settings';
     checkWAStatus();
+  }
+}
+
+async function loadSessions() {
+  try {
+    sessionsListSelect.innerHTML = '<option value="">Loading sessions...</option>';
+    const res = await fetch(`${API_BASE}/sessions`);
+    const data = await res.json();
+
+    sessionsListSelect.innerHTML = '';
+    
+    if (data.sessions && data.sessions.length > 0) {
+      data.sessions.forEach(s => {
+        const opt = document.createElement('option');
+        opt.value = s.name;
+        const isActive = (s.name === data.activeSession);
+        const badge = s.status ? ` [${s.status}]` : '';
+        opt.textContent = `${s.name}${badge}${isActive ? ' ➔ (Active)' : ''}`;
+        if (isActive) {
+          opt.style.fontWeight = 'bold';
+          opt.style.color = '#10b981';
+        }
+        sessionsListSelect.appendChild(opt);
+      });
+      sessionsListSelect.value = data.activeSession;
+    } else {
+      sessionsListSelect.innerHTML = '<option value="">No sessions found on gateway</option>';
+    }
+  } catch (err) {
+    console.error('Failed to load sessions:', err);
+    sessionsListSelect.innerHTML = `<option value="">Error: ${err.message}</option>`;
+  }
+}
+
+async function switchSession() {
+  const sessionName = sessionsListSelect.value;
+  if (!sessionName) {
+    showToast('Please select a session from the list to switch.', 'error');
+    return;
+  }
+
+  try {
+    btnSelectSession.disabled = true;
+    btnSelectSession.textContent = 'Switching...';
+
+    const res = await fetch(`${API_BASE}/sessions/select`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionName })
+    });
+    const data = await res.json();
+
+    if (!res.ok) throw new Error(data.error || 'Failed to switch session.');
+
+    showToast(`Successfully switched to session: ${sessionName}`, 'success');
+    await loadSessions();
+    checkWAStatus();
+  } catch (err) {
+    console.error(err);
+    showToast(err.message, 'error');
+  } finally {
+    btnSelectSession.disabled = false;
+    btnSelectSession.innerHTML = '<span aria-hidden="true">🔄</span> Switch to Selected';
+  }
+}
+
+async function createSession() {
+  const sessionName = newSessionNameInput.value.trim();
+  if (!sessionName) {
+    showToast('Please type a session name to create.', 'error');
+    return;
+  }
+
+  try {
+    btnCreateSession.disabled = true;
+    btnCreateSession.textContent = 'Creating...';
+
+    const res = await fetch(`${API_BASE}/sessions/create`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionName })
+    });
+    const data = await res.json();
+
+    if (!res.ok) throw new Error(data.error || 'Failed to create session.');
+
+    showToast(`Session "${sessionName}" created and activated!`, 'success');
+    newSessionNameInput.value = '';
+    await loadSessions();
+    checkWAStatus();
+  } catch (err) {
+    console.error(err);
+    showToast(err.message, 'error');
+  } finally {
+    btnCreateSession.disabled = false;
+    btnCreateSession.innerHTML = '<span aria-hidden="true">➕</span> Create & Switch Session';
+  }
+}
+
+async function deleteSession() {
+  const sessionName = sessionsListSelect.value;
+  if (!sessionName) {
+    showToast('Please select a session from the list to delete.', 'error');
+    return;
+  }
+
+  if (!(await showConfirmModal(
+    'Delete Session',
+    `Are you sure you want to stop and delete the session "${sessionName}"? This will clear its cache completely.`,
+    'Delete'
+  ))) {
+    return;
+  }
+
+  try {
+    btnDeleteSession.disabled = true;
+    btnDeleteSession.textContent = 'Deleting...';
+
+    const res = await fetch(`${API_BASE}/sessions/${sessionName}`, {
+      method: 'DELETE'
+    });
+    const data = await res.json();
+
+    if (!res.ok) throw new Error(data.error || 'Failed to delete session.');
+
+    showToast(`Successfully deleted session: ${sessionName}`, 'success');
+    await loadSessions();
+    checkWAStatus();
+  } catch (err) {
+    console.error(err);
+    showToast(err.message, 'error');
+  } finally {
+    btnDeleteSession.disabled = false;
+    btnDeleteSession.innerHTML = '<span aria-hidden="true">🗑️</span> Delete Session';
   }
 }
 

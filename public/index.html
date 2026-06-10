@@ -411,26 +411,55 @@
           </div>
         </div>
 
-        <!-- Gateway Settings -->
-        <div class="card card-settings">
-          <h2>Gateway Settings</h2>
-          <p class="card-desc">Configure your OpenWA Gateway connection settings.</p>
-          <div class="form-group">
-            <label for="settings-url">Gateway URL</label>
-            <input type="text" id="settings-url" class="form-control" placeholder="http://localhost:2785/api">
+        <!-- Right Column wrapper -->
+        <div style="display: flex; flex-direction: column; gap: 24px;">
+          <!-- Gateway Settings -->
+          <div class="card card-settings">
+            <h2>Gateway Settings</h2>
+            <p class="card-desc">Configure your OpenWA Gateway connection settings.</p>
+            <div class="form-group">
+              <label for="settings-url">Gateway URL</label>
+              <input type="text" id="settings-url" class="form-control" placeholder="http://localhost:2785/api">
+            </div>
+            <div class="form-group mt-md">
+              <label for="settings-key">API Key</label>
+              <input type="password" id="settings-key" class="form-control" placeholder="Enter API Key">
+            </div>
+            <div class="form-group mt-md">
+              <label for="settings-hf-token">HF Space Token (Required if Gateway Space is Private)</label>
+              <input type="password" id="settings-hf-token" class="form-control" placeholder="hf_...">
+            </div>
+            <div class="editor-actions mt-xl">
+              <button id="btn-save-settings" class="btn btn-primary w-100"><span aria-hidden="true">💾</span> Save Settings</button>
+            </div>
+            <div id="settings-msg" class="settings-msg hidden"></div>
           </div>
-          <div class="form-group mt-md">
-            <label for="settings-key">API Key</label>
-            <input type="password" id="settings-key" class="form-control" placeholder="Enter API Key">
+
+          <!-- Session Manager Settings -->
+          <div class="card card-sessions-manager">
+            <h2>WhatsApp Session Manager</h2>
+            <p class="card-desc">Create, switch, or delete WhatsApp sessions on the gateway to manage multiple accounts.</p>
+            
+            <div class="form-group">
+              <label for="sessions-list-select">Select Active Session</label>
+              <select id="sessions-list-select" class="form-control" size="5" style="margin-bottom: 12px; height: 120px;"></select>
+            </div>
+            
+            <div class="editor-actions mt-md" style="display: flex; gap: 12px;">
+              <button id="btn-select-session" class="btn btn-primary" style="flex: 1;"><span aria-hidden="true">🔄</span> Switch to Selected</button>
+              <button id="btn-delete-session" class="btn btn-danger" style="flex: 1;"><span aria-hidden="true">🗑️</span> Delete Session</button>
+            </div>
+            
+            <hr style="border: 0; border-top: 1px solid var(--border-color); margin: 20px 0;">
+            
+            <div class="form-group">
+              <label for="new-session-name-input">Create New Session</label>
+              <input type="text" id="new-session-name-input" class="form-control" placeholder="e.g. support-account">
+            </div>
+            <div class="mt-md">
+              <button id="btn-create-session" class="btn btn-secondary w-100"><span aria-hidden="true">➕</span> Create & Switch Session</button>
+            </div>
           </div>
-          <div class="form-group mt-md">
-            <label for="settings-hf-token">HF Space Token (Required if Gateway Space is Private)</label>
-            <input type="password" id="settings-hf-token" class="form-control" placeholder="hf_...">
-          </div>
-          <div class="editor-actions mt-xl">
-            <button id="btn-save-settings" class="btn btn-primary w-100"><span aria-hidden="true">💾</span> Save Settings</button>
-          </div>
-          <div id="settings-msg" class="settings-msg hidden"></div>
         </div>
       </div>
     </div>
